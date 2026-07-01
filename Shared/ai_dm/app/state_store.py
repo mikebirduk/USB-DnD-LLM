@@ -73,3 +73,23 @@ def append_session_entry(player_action: str, dm_response: str) -> None:
         handle.write(f"## Player\n\n{player_action.strip()}\n\n")
         handle.write(f"## Dungeon Master\n\n{dm_response.strip()}\n\n")
         handle.write("---\n\n")
+
+
+def append_roll_entry(result: Dict[str, Any]) -> None:
+    """Append a dice-roll result to the local session log.
+
+    ``result`` is the structured dict returned by ``dice.roll_dice`` with
+    ``formula``, ``rolls``, ``modifier`` and ``total`` keys.
+    """
+    SAVES_DIR.mkdir(parents=True, exist_ok=True)
+
+    is_new = not SESSION_LOG.exists()
+    with SESSION_LOG.open("a", encoding="utf-8") as handle:
+        if is_new:
+            handle.write("# Current Session Log\n\n")
+        handle.write("### Dice Roll\n\n")
+        handle.write(f"Formula: `{result['formula']}`  \n")
+        handle.write(f"Rolls: `{result['rolls']}`  \n")
+        handle.write(f"Modifier: `{result['modifier']}`  \n")
+        handle.write(f"Total: `{result['total']}`\n\n")
+        handle.write("---\n\n")

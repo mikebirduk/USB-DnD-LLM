@@ -47,5 +47,39 @@ telemetry, or analytics. Session logs are written only to
 
 Commands inside the loop:
 
+- `/roll <formula>` — roll dice (e.g. `1d20+3`, `2d6`, `1d8-1`), print the
+  structured result, and append it to the session log
 - `/recap` — print the current saved session log
 - `/quit` — exit
+
+Example session:
+
+```bash
+python3 Shared/ai_dm/app/run_dm.py
+```
+
+```text
+/roll 1d20+3
+/recap
+/quit
+```
+
+A `/roll 1d20+3` prints something like:
+
+```text
+Roll: 1d20+3
+Dice: [14]
+Modifier: +3
+Total: 17
+```
+
+and is logged to `Shared/ai_dm/saves/current_session.md` as:
+
+```markdown
+### Dice Roll
+
+Formula: `1d20+3`  
+Rolls: `[14]`  
+Modifier: `3`  
+Total: `17`
+```

@@ -23,6 +23,7 @@ from pathlib import Path
 # app package directory is importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import dice
 import dm_engine
 import ollama_client
 import state_store
@@ -40,9 +41,34 @@ def _print_welcome(campaign, character, model) -> None:
     print(f"Using model: {model}")
     print(f"Ollama endpoint: {ollama_client.OLLAMA_HOST}")
     print("-" * 60)
-    print("  Type an action to play. Commands: /recap  /quit")
+    print("  Type an action to play. Commands: /roll <formula>  /recap  /quit")
     print("=" * 60)
     print()
+
+
+def _handle_roll(formula: str) -> None:
+    """Roll a dice formula, print the result, and log it.
+
+    Shows a clear error and does not crash on an invalid formula.
+    """
+    formula = formula.strip()
+    if not formula:
+        print("Usage: /roll <formula>   e.g. /roll 1d20+3\n")
+        return
+
+    try:
+        result = dice.roll_dice(formula)
+    except ValueError as exc:
+        print(f"Invalid dice formula: {exc}\n")
+        return
+
+    modifier = result["modifier"]
+    print(f"\nRoll: {result['formula']}")
+    print(f"Dice: {result['rolls']}")
+    print(f"Modifier: {modifier:+d}")
+    print(f"Total: {result['total']}\n")
+
+    state_store.append_roll_entry(result)
 
 
 def main() -> int:
@@ -73,6 +99,10 @@ def main() -> int:
         if player_input == "/quit":
             print("Goodbye.")
             return 0
+
+        if player_input == "/roll" or player_input.startswith("/roll "):
+            _handle_roll(player_input[len("/roll"):])
+            continue
 
         if player_input == "/recap":
             log = state_store.read_session_log()
