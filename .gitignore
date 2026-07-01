@@ -1,22 +1,135 @@
-# Ignore heavy AI models
-Shared/models/*.gguf
-Shared/models/ollama_data/
-Shared/models/installed-models.txt
-Shared/models/Modelfile*
-Shared/.ollama-runtime
-Shared/models
-Shared/vendor
+# -------------------------------------------------------------------
+# USB-DnD-LLM local/runtime files
+# These files are downloaded/generated on the USB/SSD and should not be repo code
+# -------------------------------------------------------------------
 
-# Ignore private chat history and local settings
-Shared/chat_data/
+# Heavy AI models / Ollama / llama.cpp runtime data
+Shared/models/*
+!Shared/models/.gitkeep
 
-# Ignore downloaded binaries and runtimes
+Shared/.ollama-runtime/
+Shared/ollama/
+Shared/ollama_data/
+Shared/installed-models.txt
+Shared/Modelfile*
+Shared/**/*.gguf
+Shared/**/*.bin
+Shared/**/*.safetensors
+
+# Downloaded engines, binaries, runtimes
+Shared/bin/*
+!Shared/bin/.gitkeep
+
+Shared/vendor/
 Shared/python/
-Shared/bin/
+Shared/node_modules/
 Shared/*.zip
-Shared/logs/
+Shared/*.tar
+Shared/*.tar.gz
+Shared/*.tgz
+Shared/*.7z
 
-# Ignore Windows system files
+# Generic chat history, local settings, logs
+Shared/chat_data/*
+!Shared/chat_data/.gitkeep
+
+Shared/logs/*
+!Shared/logs/.gitkeep
+
+Shared/**/*.log
+Shared/**/*_history.json
+Shared/**/settings.json
+
+# -------------------------------------------------------------------
+# AI DM private/runtime data
+# -------------------------------------------------------------------
+
+Shared/ai_dm/campaigns/*
+!Shared/ai_dm/campaigns/.gitkeep
+
+Shared/ai_dm/data/*
+!Shared/ai_dm/data/.gitkeep
+!Shared/ai_dm/data/vector_index/
+!Shared/ai_dm/data/vector_index/.gitkeep
+
+Shared/ai_dm/data/vector_index/*
+!Shared/ai_dm/data/vector_index/.gitkeep
+
+Shared/ai_dm/logs/*
+!Shared/ai_dm/logs/.gitkeep
+
+Shared/ai_dm/cache/*
+!Shared/ai_dm/cache/.gitkeep
+
+Shared/ai_dm/saves/*
+!Shared/ai_dm/saves/.gitkeep
+
+Shared/ai_dm/exports/*
+!Shared/ai_dm/exports/.gitkeep
+!Shared/ai_dm/exports/session_recaps/
+!Shared/ai_dm/exports/session_recaps/.gitkeep
+!Shared/ai_dm/exports/campaign_packs/
+!Shared/ai_dm/exports/campaign_packs/.gitkeep
+
+Shared/ai_dm/exports/session_recaps/*
+!Shared/ai_dm/exports/session_recaps/.gitkeep
+
+Shared/ai_dm/exports/campaign_packs/*
+!Shared/ai_dm/exports/campaign_packs/.gitkeep
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Python caches / virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend caches
+node_modules/
+dist/
+build/
+.cache/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Windows
 Thumbs.db
 Desktop.ini
-.DS_Store
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment/config
+.env
+.env.*
+!.env.example

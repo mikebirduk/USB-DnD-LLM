@@ -1,0 +1,16 @@
+{
+  "campaign_title": "Example Campaign",
+  "tone": "low fantasy mystery",
+  "starting_level": 1,
+  "current_location": "Example Village",
+  "player_visible_summary": "A small village sits beside an old forest.",
+  "dm_secrets": [
+    "Something beneath the old well is waking."
+  ],
+  "open_threads": [
+    "Why have the village bells started ringing at midnight?"
+  ],
+  "locations": [],
+  "npcs": [],
+  "quests": []
+}

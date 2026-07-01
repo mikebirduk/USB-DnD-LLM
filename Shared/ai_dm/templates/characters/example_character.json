@@ -1,0 +1,21 @@
+{
+  "name": "Example Hero",
+  "level": 1,
+  "class": "Fighter",
+  "ancestry": "Human",
+  "hp": {
+    "current": 12,
+    "max": 12
+  },
+  "ac": 16,
+  "abilities": {
+    "strength": 15,
+    "dexterity": 12,
+    "constitution": 14,
+    "intelligence": 10,
+    "wisdom": 11,
+    "charisma": 9
+  },
+  "inventory": [],
+  "conditions": []
+}
