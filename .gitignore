@@ -133,3 +133,7 @@ $RECYCLE.BIN/
 .env
 .env.*
 !.env.example
+
+# Portable Ollama runtime libraries downloaded during install
+Shared/lib/ollama/*
+!Shared/lib/ollama/.gitkeep
