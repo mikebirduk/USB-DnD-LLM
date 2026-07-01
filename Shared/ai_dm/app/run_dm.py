@@ -16,6 +16,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -71,6 +72,51 @@ def _handle_roll(formula: str) -> None:
     state_store.append_roll_entry(result)
 
 
+def _handle_dm_response(player_input: str, raw_response: str) -> None:
+    """Parse a structured DM response, show it to the player, and log it.
+
+    On a parse failure, prints a friendly error and the raw response, saves
+    the raw output for debugging, and does not crash.
+    """
+    try:
+        data = dm_engine.parse_dm_response(raw_response)
+    except ValueError as exc:
+        print(
+            "\n[Could not read the DM response as JSON — showing raw output.]",
+            file=sys.stderr,
+        )
+        print(f"[{exc}]\n", file=sys.stderr)
+        print(raw_response.strip() + "\n")
+        state_store.append_failed_turn(player_input, raw_response)
+        return
+
+    narration = str(data.get("narration", "")).strip()
+    check = data.get("requested_check")
+    check_summary = dm_engine.format_check_summary(check)
+    prompt_to_player = str(data.get("prompt_to_player", "")).strip()
+
+    # Player-visible output only. dm_notes are never printed.
+    print(f"\nDM  > {narration}\n" if narration else "\nDM  > (no narration)\n")
+
+    if check_summary:
+        print(f"Suggested check: {check_summary}")
+        reason = str(check.get("reason", "")).strip() if isinstance(check, dict) else ""
+        if reason:
+            print(f"Reason: {reason}")
+        print("Use: /roll 1d20+<modifier>\n")
+
+    if prompt_to_player:
+        print(f"{prompt_to_player}\n")
+
+    structured_json = json.dumps(data, indent=2, ensure_ascii=False)
+    state_store.append_structured_turn(
+        player_action=player_input,
+        narration=narration,
+        check_summary=check_summary,
+        structured_json=structured_json,
+    )
+
+
 def main() -> int:
     try:
         campaign = state_store.load_campaign()
@@ -124,13 +170,12 @@ def main() -> int:
         )
 
         try:
-            dm_response = ollama_client.chat(messages, model=model)
+            dm_response = ollama_client.chat(messages, model=model, json_mode=True)
         except ollama_client.OllamaError as exc:
             print(f"\n[Ollama error] {exc}\n", file=sys.stderr)
             continue
 
-        print(f"\nDM  > {dm_response.strip()}\n")
-        state_store.append_session_entry(player_input, dm_response)
+        _handle_dm_response(player_input, dm_response)
 
 
 if __name__ == "__main__":

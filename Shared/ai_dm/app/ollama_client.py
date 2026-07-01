@@ -73,6 +73,7 @@ def chat(
     messages: List[Dict[str, str]],
     model: str | None = None,
     timeout: float = 120.0,
+    json_mode: bool = False,
 ) -> str:
     """Send a non-streaming chat request to the local Ollama server.
 
@@ -80,6 +81,9 @@ def chat(
         messages: A list of ``{"role": ..., "content": ...}`` dicts.
         model: Model name to use. Defaults to :func:`get_model`.
         timeout: Socket timeout in seconds.
+        json_mode: If True, ask Ollama to constrain output to valid JSON by
+            setting ``"format": "json"`` on the request. Callers should still
+            defensively parse the result, since not every model honours it.
 
     Returns:
         The assistant message content as a string.
@@ -93,6 +97,8 @@ def chat(
         "messages": messages,
         "stream": False,
     }
+    if json_mode:
+        payload["format"] = "json"
 
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(

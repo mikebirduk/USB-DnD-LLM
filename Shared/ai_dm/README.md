@@ -45,6 +45,25 @@ Everything runs locally against `http://127.0.0.1:11434` — no cloud APIs,
 telemetry, or analytics. Session logs are written only to
 `Shared/ai_dm/saves/current_session.md`, which stays out of Git.
 
+The DM replies with a structured JSON response. Only the player-visible parts
+(narration, any suggested check, and the prompt back to you) are printed;
+hidden DM notes are kept in the session log, not shown. When the DM suggests a
+check, roll it manually with `/roll`.
+
+```text
+I listen at the cellar door.
+
+DM:
+The wood is damp and cold beneath your ear...
+
+Suggested check: Wisdom (Perception), DC 12
+Use: /roll 1d20+<modifier>
+```
+
+If the model returns something that is not valid JSON, the runner prints a
+friendly error plus the raw response and saves it to the session log for
+debugging — it does not crash.
+
 Commands inside the loop:
 
 - `/roll <formula>` — roll dice (e.g. `1d20+3`, `2d6`, `1d8-1`), print the

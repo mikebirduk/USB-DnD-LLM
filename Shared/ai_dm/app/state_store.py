@@ -75,6 +75,55 @@ def append_session_entry(player_action: str, dm_response: str) -> None:
         handle.write("---\n\n")
 
 
+def _write_log(blocks: str) -> None:
+    """Append pre-formatted markdown to the session log, creating it if new."""
+    SAVES_DIR.mkdir(parents=True, exist_ok=True)
+    is_new = not SESSION_LOG.exists()
+    with SESSION_LOG.open("a", encoding="utf-8") as handle:
+        if is_new:
+            handle.write("# Current Session Log\n\n")
+        handle.write(blocks)
+
+
+def append_structured_turn(
+    player_action: str,
+    narration: str,
+    check_summary: str,
+    structured_json: str,
+) -> None:
+    """Append one structured DM turn to the local session log.
+
+    Writes the player action, the player-visible narration (plus an optional
+    "Suggested check" line), and the full structured JSON response. Hidden
+    ``dm_notes`` are part of the structured block only, never shown as
+    player-facing narration.
+    """
+    parts = [
+        f"## Player\n\n{player_action.strip()}\n\n",
+        f"## DM\n\n{narration.strip()}\n\n",
+    ]
+    if check_summary:
+        parts.append(f"Suggested check: {check_summary}\n\n")
+    parts.append(
+        "## DM Structured Response\n\n"
+        f"```json\n{structured_json.strip()}\n```\n\n---\n\n"
+    )
+    _write_log("".join(parts))
+
+
+def append_failed_turn(player_action: str, raw_response: str) -> None:
+    """Append a DM turn whose response could not be parsed as JSON.
+
+    Saves the raw model output for debugging without crashing the loop.
+    """
+    _write_log(
+        f"## Player\n\n{player_action.strip()}\n\n"
+        "## DM (unparsed response)\n\n"
+        "The model did not return valid JSON. Raw response saved below:\n\n"
+        f"```\n{raw_response.strip()}\n```\n\n---\n\n"
+    )
+
+
 def append_roll_entry(result: Dict[str, Any]) -> None:
     """Append a dice-roll result to the local session log.
 

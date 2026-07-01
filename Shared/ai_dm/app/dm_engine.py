@@ -7,17 +7,65 @@ log, and the latest player input into an Ollama-style ``messages`` list.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import json
+from typing import Any, Dict, List, Optional
 
 # Behavioural instructions layered on top of the base system prompt.
 DM_TURN_INSTRUCTIONS = """\
 Turn instructions:
 - Respond only as the Dungeon Master.
+- Return valid JSON only. Do not wrap the JSON in markdown and do not add
+  any commentary outside the JSON object.
 - Do not decide the player character's actions, thoughts, or dialogue.
 - Do not reveal hidden DM-only context unless the player has discovered it in play.
-- Keep the response concise but atmospheric.
-- Ask for a dice roll only when a roll is actually appropriate.
-- End with a clear prompt inviting the player's next action."""
+- Keep narration concise but atmospheric.
+- Only request a check (set "requested_check") when failure would be interesting;
+  otherwise set "requested_check" to null.
+- Always end with a clear "prompt_to_player"."""
+
+
+def parse_dm_response(text: str) -> Dict[str, Any]:
+    """Parse a model response into the structured DM response dict.
+
+    Tolerates a stray ```json fenced code block in case the model ignores
+    the "no markdown" instruction. Raises ``ValueError`` if the text is not
+    valid JSON or is not a JSON object.
+    """
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        # Drop the opening fence (``` or ```json) and the closing fence.
+        cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else ""
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[: -len("```")]
+        cleaned = cleaned.strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Model response was not valid JSON: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Model response JSON was not an object.")
+
+    return parsed
+
+
+def format_check_summary(check: Optional[Dict[str, Any]]) -> str:
+    """Format a ``requested_check`` dict as e.g. ``Wisdom (Perception), DC 13``.
+
+    Returns an empty string when there is no check.
+    """
+    if not check:
+        return ""
+
+    ability = str(check.get("ability", "")).strip() or "Check"
+    skill = str(check.get("skill", "")).strip()
+    dc = check.get("dc")
+
+    summary = f"{ability} ({skill})" if skill else ability
+    if dc is not None:
+        summary += f", DC {dc}"
+    return summary
 
 
 def _format_hp(hp: Any) -> str:
