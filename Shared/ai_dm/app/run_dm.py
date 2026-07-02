@@ -14,6 +14,8 @@ Commands:
     /rollcheck        roll the active character's modifier for the pending check
     /character        show the active character sheet
     /mod <ability> [skill]   show the character's modifier for an ability/skill
+    /rule <query>     look up local rules by keyword
+    /rules-status     show whether the local rules library is installed
     /check            show the current pending check, if any
     /scene            show the player-facing view of the current scene
     /scene-debug      show the full current scene JSON (dev only)
@@ -41,6 +43,7 @@ import character
 import dice
 import dm_engine
 import ollama_client
+import rules_lookup
 import state_store
 
 # Everything a DM turn needs: resolved model plus loaded game context.
@@ -63,9 +66,9 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print("-" * 60)
     print(
         "  Type an action to play. Commands: /roll <formula>  /rollcheck  "
-        "/character  /mod <ability> [skill]  /check  /scene  /scene-debug  "
-        "/reset-scene  /detect <action>  /narrate <action>  /debug-last  "
-        "/recap  /quit"
+        "/character  /mod <ability> [skill]  /rule <query>  /rules-status  "
+        "/check  /scene  /scene-debug  /reset-scene  /detect <action>  "
+        "/narrate <action>  /debug-last  /recap  /quit"
     )
     print("=" * 60)
     print()
@@ -188,6 +191,40 @@ def _handle_player_action(player_input: str, ctx: Ctx) -> None:
     if reason:
         print(f"Reason: {reason}")
     print("Use: /roll 1d20+<modifier>\n")
+
+
+def _handle_rule(query: str) -> None:
+    """Look up local rules by keyword and print up to 3 matching snippets."""
+    query = query.strip()
+    if not query:
+        print("Usage: /rule <query>   e.g. /rule perception\n")
+        return
+    if not rules_lookup.load_rules_lookup():
+        print(f"{rules_lookup.NOT_INSTALLED_MESSAGE}\n")
+        return
+    results = rules_lookup.search_rules(query, limit=3)
+    print(f"\n{rules_lookup.format_rule_results(results)}\n")
+
+
+def _handle_rules_status() -> None:
+    """Report whether rules are installed and how many docs are indexed."""
+    installed = state_store.load_installed_rules()
+    if installed:
+        print("Rules installed: yes")
+        print(f"Ruleset: {installed.get('ruleset', '?')} {installed.get('version', '?')}")
+    else:
+        print("Rules installed: no")
+
+    docs = rules_lookup.load_rules_lookup()
+    print(f"Lookup index: {'yes' if docs else 'no'}")
+    print(f"Indexed docs: {len(docs)}")
+    if not installed or not docs:
+        print(
+            "\nBuild the rules library with:\n"
+            "  python3 Shared/ai_dm/rules/scripts/install_rules.py\n"
+            "  python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py"
+        )
+    print()
 
 
 def _handle_debug_last() -> None:
@@ -569,6 +606,14 @@ def main() -> int:
 
         if player_input == "/mod" or player_input.startswith("/mod "):
             _handle_mod(player_input[len("/mod"):])
+            continue
+
+        if player_input == "/rule" or player_input.startswith("/rule "):
+            _handle_rule(player_input[len("/rule"):])
+            continue
+
+        if player_input == "/rules-status":
+            _handle_rules_status()
             continue
 
         if player_input == "/check":

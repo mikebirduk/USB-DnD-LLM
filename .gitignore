@@ -77,6 +77,30 @@ Shared/ai_dm/exports/session_recaps/*
 Shared/ai_dm/exports/campaign_packs/*
 !Shared/ai_dm/exports/campaign_packs/.gitkeep
 
+# Downloaded/generated rules content
+Shared/ai_dm/rules/srd/*/source/*
+Shared/ai_dm/rules/srd/*/markdown/*
+Shared/ai_dm/rules/srd/*/chunks/*
+Shared/ai_dm/rules/srd/*/lookup/*
+Shared/ai_dm/rules/installed-rules.json
+
+# Keep SRD folder placeholders
+!Shared/ai_dm/rules/srd/
+!Shared/ai_dm/rules/srd/.gitkeep
+
+# Keep rules source tooling tracked
+!Shared/ai_dm/rules/manifests/
+!Shared/ai_dm/rules/manifests/**
+!Shared/ai_dm/rules/attribution/
+!Shared/ai_dm/rules/attribution/**
+!Shared/ai_dm/rules/house_rules/
+!Shared/ai_dm/rules/house_rules/**
+!Shared/ai_dm/rules/scripts/
+!Shared/ai_dm/rules/scripts/**
+
+# Private local house rules stay local; the .example.md remains tracked
+Shared/ai_dm/rules/house_rules/house_rules.md
+
 # Local databases
 *.sqlite
 *.sqlite3

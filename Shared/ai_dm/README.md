@@ -173,6 +173,32 @@ Intelligence (Investigation), DC 13
 Use `/character` to view the sheet and `/mod <ability> [skill]` (e.g.
 `/mod Intelligence Investigation`) to preview a modifier without rolling.
 
+### Local rules library
+
+Install a starter local rules library and build the keyword lookup index, then
+run the DM loop:
+
+```bash
+python3 Shared/ai_dm/rules/scripts/install_rules.py
+python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py
+python3 Shared/ai_dm/app/run_dm.py
+```
+
+Inside the runner:
+
+```text
+/rules-status
+/rule perception
+/rule grappled
+/rule short rest
+```
+
+This milestone uses short starter local rules summaries and simple keyword
+lookup. Full SRD import/parsing and vector search will come later. Generated
+rules content (Markdown summaries, the lookup index, and `installed-rules.json`)
+stays local under `Shared/ai_dm/rules/` and is git-ignored; only the manifests,
+attribution, example house rules, and scripts are tracked.
+
 Commands inside the loop:
 
 - `/roll <formula>` — roll dice (e.g. `1d20+3`, `2d6`, `1d8-1`); resolves the
@@ -183,6 +209,9 @@ Commands inside the loop:
   proficiency bonus, skill proficiencies, and expertise)
 - `/mod <ability> [skill]` — show the character's modifier for an ability, or
   an ability + skill (e.g. `/mod Wisdom Perception`)
+- `/rule <query>` — look up local rules by keyword (e.g. `/rule perception`)
+- `/rules-status` — show whether the local rules library is installed and
+  indexed
 - `/check` — show the current pending check, if any
 - `/detect <action>` — preview the scene check an action would trigger,
   without saving it

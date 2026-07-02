@@ -26,6 +26,13 @@ PENDING_CHECK = SAVES_DIR / "pending_check.json"
 LAST_DM_RESPONSE = SAVES_DIR / "last_dm_response.json"
 CURRENT_SCENE = SAVES_DIR / "current_scene.json"
 
+# Local rules library (generated content is git-ignored).
+RULES_DIR = AI_DM_ROOT / "rules"
+RULES_SRD_VERSION = "5.2.1"
+RULES_SRD_DIR = RULES_DIR / "srd" / RULES_SRD_VERSION
+RULES_LOOKUP_INDEX = RULES_SRD_DIR / "lookup" / "rules_lookup.json"
+INSTALLED_RULES = RULES_DIR / "installed-rules.json"
+
 
 def load_json(path: Path) -> Dict[str, Any]:
     """Load and parse a JSON file, raising a clear error if missing."""
@@ -108,6 +115,17 @@ def read_session_log() -> str:
     if not SESSION_LOG.exists():
         return ""
     return SESSION_LOG.read_text(encoding="utf-8")
+
+
+def load_installed_rules() -> Optional[Dict[str, Any]]:
+    """Return the installed-rules metadata, or None if absent/unreadable."""
+    if not INSTALLED_RULES.exists():
+        return None
+    try:
+        data = json.loads(INSTALLED_RULES.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def append_session_entry(player_action: str, dm_response: str) -> None:

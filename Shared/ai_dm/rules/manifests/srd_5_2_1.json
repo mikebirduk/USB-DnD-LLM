@@ -1,0 +1,35 @@
+{
+  "ruleset": "dnd-srd",
+  "version": "5.2.1",
+  "license": "CC-BY-4.0",
+  "source_name": "Dungeons & Dragons SRD 5.2.1",
+  "source_url": "https://www.dndbeyond.com/srd",
+  "install_path": "Shared/ai_dm/rules/srd/5.2.1",
+  "sections": [
+    {
+      "id": "ability_checks",
+      "title": "Ability Checks",
+      "keywords": ["ability check", "skill check", "dc", "difficulty class", "advantage", "disadvantage"]
+    },
+    {
+      "id": "combat",
+      "title": "Combat",
+      "keywords": ["combat", "initiative", "attack", "action", "bonus action", "reaction", "movement"]
+    },
+    {
+      "id": "conditions",
+      "title": "Conditions",
+      "keywords": ["condition", "grappled", "prone", "restrained", "stunned", "frightened", "charmed"]
+    },
+    {
+      "id": "resting",
+      "title": "Resting and Recovery",
+      "keywords": ["short rest", "long rest", "hit dice", "healing", "exhaustion"]
+    },
+    {
+      "id": "death_and_dying",
+      "title": "Death and Dying",
+      "keywords": ["death saving throw", "dying", "stable", "unconscious", "hit points", "zero hit points"]
+    }
+  ]
+}
