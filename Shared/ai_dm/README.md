@@ -287,9 +287,35 @@ returns something invalid, the raw response is saved as
 crash.
 
 Generated campaigns are **local and private**, stored under
-`Shared/ai_dm/campaigns/`, and are **ignored by Git**. This is the first
-campaign-generation milestone: it produces the pack but does **not** auto-load
-it as the active campaign/scene yet.
+`Shared/ai_dm/campaigns/`, and are **ignored by Git**. Campaign generation does
+**not** auto-load the pack as the active campaign/scene yet.
+
+#### Linting and repair
+
+Generated packs are automatically **linted** and get safe **deterministic
+repairs** before they're considered playable (pass `--no-repair` to lint
+only). Repairs fix common model mistakes: non-standard skill/ability pairings,
+social interactions mistakenly using a physical skill (e.g. a tavern-keeper
+chat set to Strength (Athletics) → Charisma (Persuasion)), title-style check
+triggers rewritten into player-action phrases, out-of-range DCs, scene clocks
+that start above 0, and messy `session_01_outline.md` files (regenerated as
+clean Markdown from the pack). Warnings that need judgment — a success that
+reveals too much, or a hidden truth that reads like a rumour — are reported but
+not auto-changed. The linter does **not** replace human review.
+
+```bash
+# generate with repair (default)
+python3 Shared/ai_dm/app/generate_campaign.py "low magic coastal folk horror" --repair
+
+# lint an existing pack without changing it
+python3 Shared/ai_dm/app/generate_campaign.py --lint-only Shared/ai_dm/campaigns/whispers-in-the-tide
+
+# repair an existing pack
+python3 Shared/ai_dm/app/generate_campaign.py --repair Shared/ai_dm/campaigns/whispers-in-the-tide
+```
+
+Each pack gets a `lint_report.json` (warnings before, repairs applied, warnings
+after). Like the rest of the pack, it stays local and is ignored by Git.
 
 Commands inside the loop:
 

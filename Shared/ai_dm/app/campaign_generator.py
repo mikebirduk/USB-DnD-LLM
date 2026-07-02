@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import campaign_linter
 import dm_engine
 import ollama_client
 import state_store
@@ -203,12 +204,16 @@ def generate_campaign_pack(
     seed: str,
     output_slug: Optional[str] = None,
     model: Optional[str] = None,
+    lint: bool = True,
+    repair: bool = True,
 ) -> Dict[str, Any]:
     """Generate an engine-ready campaign pack from a seed.
 
-    Returns a metadata dict: on success ``{"ok": True, "slug", "folder",
-    "title", "files": [...]}``; on failure ``{"ok": False, "error": ...}`` and,
-    when a raw model response was captured, ``"raw_path"``. Never raises.
+    After writing the pack, optionally lints it and applies deterministic
+    repairs, writing ``lint_report.json``. Returns a metadata dict: on success
+    ``{"ok": True, "slug", "folder", "title", "files", "warnings", "repaired"}``;
+    on failure ``{"ok": False, "error": ...}`` (with ``"raw_path"`` when a raw
+    model response was captured). Never raises.
     """
     seed = (seed or "").strip()
     if not seed:
@@ -299,10 +304,18 @@ def generate_campaign_pack(
             except json.JSONDecodeError as exc:
                 return {"ok": False, "error": f"Written JSON did not parse: {name} ({exc})"}
 
-    return {
+    result = {
         "ok": True,
         "slug": slug,
         "folder": str(folder),
         "title": campaign.get("campaign_title", "Untitled Campaign"),
         "files": files,
     }
+
+    if lint:
+        report = campaign_linter.process_pack(folder, do_repair=repair)
+        result["warnings"] = len(report["warnings_before"])
+        result["repaired"] = len(report["repairs"])
+        result["lint_report"] = str(folder / "lint_report.json")
+
+    return result
