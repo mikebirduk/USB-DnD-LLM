@@ -21,6 +21,7 @@ SRD_DIR = RULES_DIR / "srd" / SRD_VERSION
 MARKDOWN_DIR = SRD_DIR / "markdown"
 LOOKUP_DIR = SRD_DIR / "lookup"
 LOOKUP_INDEX = LOOKUP_DIR / "rules_lookup.json"
+MANIFEST = RULES_DIR / "manifests" / "srd_5_2_1.json"
 
 LOCAL_PATH = f"Shared/ai_dm/rules/srd/{SRD_VERSION}"
 
@@ -49,6 +50,11 @@ def _title_from_text(text: str, fallback: str) -> str:
     return fallback.replace("_", " ").title()
 
 
+def _strip_comments(text: str) -> str:
+    """Remove HTML comment blocks (e.g. the source/license header)."""
+    return re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
+
+
 def _keywords(doc_id: str, title: str, text: str) -> list:
     """Build a small keyword list from filename, heading, and frequent words."""
     keywords = []
@@ -62,7 +68,8 @@ def _keywords(doc_id: str, title: str, text: str) -> list:
     for word in _tokens(title):
         add(word)
 
-    counts = Counter(w for w in _tokens(text) if len(w) > 3 and w not in STOP_WORDS)
+    body = _strip_comments(text)
+    counts = Counter(w for w in _tokens(body) if len(w) > 3 and w not in STOP_WORDS)
     for word, _count in counts.most_common():
         if len(keywords) >= _MAX_KEYWORDS:
             break
@@ -81,6 +88,17 @@ def main() -> int:
 
     LOOKUP_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Source/license metadata from the manifest, attached to every doc.
+    source_name = "Dungeons & Dragons SRD 5.2.1"
+    license_name = "CC-BY-4.0"
+    if MANIFEST.exists():
+        try:
+            manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+            source_name = manifest.get("source_name", source_name)
+            license_name = manifest.get("license", license_name)
+        except json.JSONDecodeError:
+            pass
+
     docs = []
     for md_path in sorted(MARKDOWN_DIR.glob("*.md")):
         text = md_path.read_text(encoding="utf-8")
@@ -93,6 +111,8 @@ def main() -> int:
                 "path": f"{LOCAL_PATH}/markdown/{md_path.name}",
                 "keywords": _keywords(doc_id, title, text),
                 "text": text,
+                "source": source_name,
+                "license": license_name,
             }
         )
 

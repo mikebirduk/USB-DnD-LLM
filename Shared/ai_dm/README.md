@@ -175,14 +175,41 @@ Use `/character` to view the sheet and `/mod <ability> [skill]` (e.g.
 
 ### Local rules library
 
-Install a starter local rules library and build the keyword lookup index, then
-run the DM loop:
+Install a rules library and build the keyword lookup index, then run the DM
+loop. Use the **starter** summaries (offline) or import the **official** SRD
+5.2.1 PDF (CC-BY-4.0).
+
+Starter rules:
 
 ```bash
-python3 Shared/ai_dm/rules/scripts/install_rules.py
+python3 Shared/ai_dm/rules/scripts/install_rules.py --starter
 python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py
 python3 Shared/ai_dm/app/run_dm.py
 ```
+
+Official SRD import:
+
+```bash
+python3 Shared/ai_dm/rules/scripts/download_srd.py
+python3 -m pip install pypdf
+python3 Shared/ai_dm/rules/scripts/extract_srd_text.py
+python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py
+```
+
+Or run the whole official workflow at once (falls back to starter if no PDF):
+
+```bash
+python3 Shared/ai_dm/rules/scripts/install_rules.py --official
+```
+
+No-network mode (use an already-downloaded PDF):
+
+```bash
+python3 Shared/ai_dm/rules/scripts/install_rules.py --official --no-network
+```
+
+The downloaded SRD PDF and all extracted/generated text are local runtime
+files, ignored by Git. Do not add non-SRD D&D books or proprietary material.
 
 Inside the runner:
 

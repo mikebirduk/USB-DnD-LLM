@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
-"""Install a starter local rules library for the AI DM.
+"""Install the local rules library for the AI DM.
 
-For this milestone the installer writes short SRD-compatible summary Markdown
-files (not copied long SRD text) into the local rules folder and records
-install metadata. A later milestone will replace this with a real SRD
-downloader/parser. Everything is written locally under the repo; no network
-access, no cloud APIs.
+Two modes:
+  --starter  : write short SRD-compatible summary Markdown (no long SRD text).
+  --official : download + extract the official SRD 5.2.1 PDF, then build.
+Default: use the official PDF if it is already present, else starter fallback.
+
+Everything is written locally under the repo; the official workflow downloads
+the CC-BY-4.0 SRD PDF only. No cloud APIs.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 # .../ai_dm/rules/scripts/install_rules.py -> RULES_DIR = .../ai_dm/rules
-RULES_DIR = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = Path(__file__).resolve().parent
+RULES_DIR = SCRIPTS_DIR.parent
+MANIFEST = RULES_DIR / "manifests" / "srd_5_2_1.json"
 SRD_VERSION = "5.2.1"
 SRD_DIR = RULES_DIR / "srd" / SRD_VERSION
+SOURCE_DIR = SRD_DIR / "source"
 MARKDOWN_DIR = SRD_DIR / "markdown"
 LOOKUP_DIR = SRD_DIR / "lookup"
 INSTALLED_RULES = RULES_DIR / "installed-rules.json"
@@ -100,32 +108,117 @@ above 0 hit points returns you to consciousness.
 }
 
 
-def main() -> int:
-    MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
-    LOOKUP_DIR.mkdir(parents=True, exist_ok=True)
+def _pdf_path() -> Path:
+    pdf_filename = "SRD_CC_v5.2.1.pdf"
+    if MANIFEST.exists():
+        try:
+            pdf_filename = json.loads(MANIFEST.read_text(encoding="utf-8")).get(
+                "pdf_filename", pdf_filename
+            )
+        except json.JSONDecodeError:
+            pass
+    return SOURCE_DIR / pdf_filename
 
-    for filename, content in STARTER_RULES.items():
-        (MARKDOWN_DIR / filename).write_text(content, encoding="utf-8")
-        print(f"  wrote {LOCAL_PATH}/markdown/{filename}")
 
+def _write_installed(mode: str, source: str) -> None:
     metadata = {
         "ruleset": "dnd-srd",
         "version": SRD_VERSION,
-        "source": "starter local rules summaries",
-        "license": "CC-BY-4.0 compatible placeholder summaries",
+        "source": source,
+        "license": "CC-BY-4.0",
         "installed_at": datetime.now(timezone.utc).isoformat(),
         "local_path": LOCAL_PATH,
+        "mode": mode,
     }
     INSTALLED_RULES.write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    print(f"  wrote Shared/ai_dm/rules/installed-rules.json")
+    print("  wrote Shared/ai_dm/rules/installed-rules.json")
+
+
+def _run(script: str, extra=None) -> int:
+    """Run a sibling script with the same interpreter; return its exit code."""
+    cmd = [sys.executable, str(SCRIPTS_DIR / script)] + (extra or [])
+    return subprocess.run(cmd).returncode
+
+
+def install_starter() -> int:
+    MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
+    LOOKUP_DIR.mkdir(parents=True, exist_ok=True)
+    for filename, content in STARTER_RULES.items():
+        (MARKDOWN_DIR / filename).write_text(content, encoding="utf-8")
+        print(f"  wrote {LOCAL_PATH}/markdown/{filename}")
+    _write_installed("starter", "starter local rules summaries")
     print(
-        f"\nInstalled {len(STARTER_RULES)} starter rule docs for "
-        f"dnd-srd {SRD_VERSION}."
+        f"\nInstalled {len(STARTER_RULES)} starter rule docs for dnd-srd "
+        f"{SRD_VERSION}."
     )
     print("Next: python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py")
     return 0
+
+
+def install_official(no_network: bool) -> int:
+    pdf = _pdf_path()
+
+    if not pdf.exists():
+        if no_network:
+            print(f"No local SRD PDF at {pdf} and --no-network was set.", file=sys.stderr)
+            print(
+                "Download it first: python3 Shared/ai_dm/rules/scripts/download_srd.py",
+                file=sys.stderr,
+            )
+            return 1
+        print("Downloading official SRD PDF...")
+        if _run("download_srd.py") != 0:
+            print("Download failed; official install aborted.", file=sys.stderr)
+            return 1
+
+    print("Extracting SRD text and building Markdown sections...")
+    if _run("extract_srd_text.py") != 0:
+        print(
+            "Extraction failed. If pypdf is missing, install it:\n"
+            "  python3 -m pip install pypdf",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("Building rules lookup index...")
+    if _run("build_rules_lookup.py") != 0:
+        print("Lookup build failed.", file=sys.stderr)
+        return 1
+
+    _write_installed("official_pdf", "Dungeons & Dragons SRD 5.2.1")
+    print("\nInstalled official SRD 5.2.1 rules from local PDF.")
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Install the AI DM rules library.")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--starter", action="store_true", help="Generate starter summary files only."
+    )
+    group.add_argument(
+        "--official", action="store_true", help="Use the official SRD PDF workflow."
+    )
+    parser.add_argument(
+        "--no-network",
+        action="store_true",
+        help="Do not download; use an existing local PDF if present.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.starter:
+        return install_starter()
+    if args.official:
+        return install_official(no_network=args.no_network)
+
+    # Default: official if the PDF is already present, else starter fallback.
+    if _pdf_path().exists():
+        print("Official SRD PDF found — importing from PDF.")
+        return install_official(no_network=True)
+    print("No official SRD PDF found — installing starter summaries.")
+    return install_starter()
 
 
 if __name__ == "__main__":
