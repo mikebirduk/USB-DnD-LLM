@@ -287,6 +287,15 @@ def append_note(text: str) -> None:
     _write_log(f"_{text.strip()}_\n\n---\n\n")
 
 
+def append_session_start(campaign_title: str, scene_title: str) -> None:
+    """Append a session-start marker to the session log."""
+    _write_log(
+        "## Session Started\n\n"
+        f"Campaign: {campaign_title}\n"
+        f"Scene: {scene_title}\n\n---\n\n"
+    )
+
+
 def append_structured_turn(
     player_action: str,
     narration: str,

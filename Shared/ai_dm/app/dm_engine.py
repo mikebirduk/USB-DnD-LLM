@@ -314,6 +314,54 @@ def build_scene_block(scene: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _normalise_interaction(text: str) -> str:
+    """Turn a descriptive interaction into a short actionable bullet.
+
+    Conservative deterministic rules only; unmatched text is returned as-is.
+    """
+    original = str(text).strip()
+    lowered = original.lower()
+    if "tavern keeper" in lowered:
+        return "Talk to the tavern keeper."
+    if "old woman" in lowered:
+        return "Talk to the old woman."
+    if "apprentice fisherman" in lowered:
+        return "Help the apprentice fisherman."
+    return original
+
+
+def format_campaign_opening(campaign: Dict[str, Any], scene: Dict[str, Any]) -> str:
+    """Return a clean, player-facing opening for the campaign + current scene.
+
+    Never includes hidden truths, secrets, agendas, or the mystery's answer.
+    Handles missing fields and both generated and example scenes gracefully.
+    """
+    campaign = campaign or {}
+    scene = scene or {}
+
+    title = campaign.get("campaign_title", "Untitled Campaign")
+    scene_title = scene.get("scene_title", "Untitled scene")
+    lines = [f"Campaign: {title}", f"Scene: {scene_title}", ""]
+
+    description = str(scene.get("player_visible", "")).strip()
+    lines.append(description if description else "(No scene description yet.)")
+
+    sensory = [str(s).strip() for s in (scene.get("sensory_details") or []) if str(s).strip()]
+    if sensory:
+        lines += ["", "You notice:"]
+        lines += [f"- {item}" for item in sensory]
+
+    interactions = [
+        str(i).strip() for i in (scene.get("obvious_interactions") or []) if str(i).strip()
+    ]
+    if interactions:
+        lines += ["", "Obvious things you could do:"]
+        lines += [f"- {_normalise_interaction(item)}" for item in interactions]
+
+    lines += ["", "What do you do?"]
+    return "\n".join(lines)
+
+
 def _format_default_checks(checks: Any) -> str:
     """Render the scene's default checks as mechanics guidance."""
     if not checks or not isinstance(checks, list):

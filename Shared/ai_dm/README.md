@@ -290,6 +290,26 @@ Generated campaigns are **local and private**, stored under
 `Shared/ai_dm/campaigns/`, and are **ignored by Git**. Campaign generation does
 **not** auto-load the pack as the active campaign/scene yet.
 
+#### Starting play
+
+Typical flow from generation to playing:
+
+```text
+/new-campaign low magic coastal folk horror, strange lights at sea
+/campaigns
+/load-campaign whispers-in-the-tide
+/opening
+/start-session
+```
+
+- `/opening` prints a clean **player-facing** opening for the active campaign
+  and current scene (title, description, sensory details, and the obvious
+  things you could do).
+- `/start-session` prints the same opening and writes a `## Session Started`
+  marker to the local session log, clearing any pending check.
+- Neither command **calls the model** or reveals hidden truths, NPC secrets,
+  faction agendas, or the mystery's answer.
+
 #### Linting and repair
 
 Generated packs are automatically **linted** and get safe **deterministic

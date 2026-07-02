@@ -15,6 +15,8 @@ Commands:
     /active-campaign  show the active campaign and current scene
     /reset-campaign   reset to the example campaign and default scene
     /new-campaign <seed>   generate a local campaign pack from a seed
+    /opening          show the current campaign opening (player-facing)
+    /start-session    begin the session (logs a start marker)
     /roll <formula>   roll dice; resolves a pending check if one is active
     /rollcheck        roll the active character's modifier for the pending check
     /character        show the active character sheet
@@ -80,8 +82,8 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print("-" * 60)
     print("  Type an action to play, or /help for the full command list.")
     print(
-        "  Campaigns: /campaigns  /load-campaign <slug>  /active-campaign  "
-        "/reset-campaign  /new-campaign <seed>"
+        "  Campaigns: /campaigns  /load-campaign <slug>  /opening  "
+        "/start-session  /active-campaign  /reset-campaign  /new-campaign <seed>"
     )
     print("=" * 60)
     print()
@@ -270,6 +272,25 @@ def _handle_load_campaign(slug: str, ctx: Ctx) -> None:
 
     print(f"\nLoaded campaign: {title}")
     print(f"Current scene: {scene_title}\n")
+    print("Type /opening to preview the starting situation.")
+    print("Type /start-session to begin.\n")
+
+
+def _handle_opening(ctx: Ctx) -> None:
+    """Print the clean, player-facing campaign opening (no model call)."""
+    scene = state_store.load_current_scene() or {}
+    print("\n" + dm_engine.format_campaign_opening(ctx.campaign, scene) + "\n")
+
+
+def _handle_start_session(ctx: Ctx) -> None:
+    """Print the opening, log a session-start marker, and clear pending checks."""
+    scene = state_store.load_current_scene() or {}
+    print("\n" + dm_engine.format_campaign_opening(ctx.campaign, scene) + "\n")
+    state_store.clear_pending_check()
+    state_store.append_session_start(
+        ctx.campaign.get("campaign_title", "Untitled Campaign"),
+        scene.get("scene_title", "Untitled scene"),
+    )
 
 
 def _handle_active_campaign(ctx: Ctx) -> None:
@@ -308,6 +329,8 @@ def _handle_help() -> None:
         "  /active-campaign           show the active campaign and scene\n"
         "  /reset-campaign            reset to the example campaign\n"
         "  /new-campaign <seed>       generate a new campaign pack\n"
+        "  /opening                   show the current campaign opening\n"
+        "  /start-session             begin the current campaign session\n"
         "  /rule <query>              look up local rules\n"
         "  /rules-context <text>      preview rules context for text\n"
         "  /askrule <question>        answer a rules question\n"
@@ -949,6 +972,14 @@ def main() -> int:
 
         if player_input == "/reset-campaign":
             _handle_reset_campaign(ctx)
+            continue
+
+        if player_input == "/opening":
+            _handle_opening(ctx)
+            continue
+
+        if player_input == "/start-session":
+            _handle_start_session(ctx)
             continue
 
         if player_input == "/new-campaign" or player_input.startswith("/new-campaign "):
