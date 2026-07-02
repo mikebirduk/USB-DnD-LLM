@@ -35,30 +35,36 @@ these top-level keys:
     "party_size": "1-3 players",
     "summary": "...",
     "central_mystery": "...",
-    "starting_scene": "starting_scene",
+    "starting_scene": "the-port",
     "open_threads": ["...", "..."],
     "themes": ["...", "..."],
     "safety_notes": ["...", "..."]
   },
-  "starting_scene": {
-    "scene_id": "starting_scene",
-    "scene_title": "...",
-    "location": "...",
-    "player_visible": "...",
-    "sensory_details": ["...", "..."],
-    "current_situation": "...",
-    "hidden_truths": ["secret 1", "secret 2", "secret 3"],
-    "obvious_interactions": ["...", "...", "..."],
-    "default_checks": [
-      {"trigger": "...", "ability": "Intelligence", "skill": "Investigation",
-       "dc": 13, "success": "...", "failure": "..."},
-      {"trigger": "...", "ability": "Wisdom", "skill": "Perception",
-       "dc": 13, "success": "...", "failure": "..."}
-    ],
-    "scene_clocks": [
-      {"name": "Danger Clock", "value": 0, "max": 4, "description": "..."}
-    ]
-  },
+  "scenes": [
+    {
+      "scene_id": "the-port",
+      "scene_title": "...",
+      "location": "...",
+      "player_visible": "...",
+      "sensory_details": ["...", "..."],
+      "current_situation": "...",
+      "hidden_truths": ["secret 1", "secret 2", "secret 3"],
+      "obvious_interactions": ["...", "...", "..."],
+      "default_checks": [
+        {"trigger": "...", "ability": "Intelligence", "skill": "Investigation",
+         "dc": 13, "success": "...", "failure": "..."},
+        {"trigger": "...", "ability": "Wisdom", "skill": "Perception",
+         "dc": 13, "success": "...", "failure": "..."}
+      ],
+      "scene_clocks": [
+        {"name": "Danger Clock", "value": 0, "max": 4, "description": "..."}
+      ],
+      "exits": [
+        {"label": "...", "target_scene_id": "smugglers-tunnels",
+         "description": "..."}
+      ]
+    }
+  ],
   "npcs": [
     {"npc_id": "kebab-name", "name": "...", "role": "...",
      "public_description": "...", "motive": "...", "secret": "...",
@@ -88,9 +94,12 @@ these top-level keys:
   }
 }
 
-The starting scene must have at least 3 hidden_truths, at least 3
-obvious_interactions, and at least 2 default_checks, and every default check
-must include trigger, ability, skill, dc, success, and failure.
+Provide exactly 3 scenes in "scenes". "campaign.starting_scene" must be the
+scene_id of the first scene. The starting scene must have at least 3
+hidden_truths. Every scene must have at least 2 obvious_interactions and at
+least 2 default_checks, and every default check must include trigger, ability,
+skill, dc, success, and failure. Each non-final scene must include at least one
+exit with label, target_scene_id (an existing scene_id), and description.
 """
 
 _REQUIRED_CHECK_FIELDS = ("trigger", "ability", "skill", "dc", "success", "failure")
@@ -116,38 +125,57 @@ def build_generation_messages(seed: str):
     ]
 
 
+def _get_scenes(pack: Dict[str, Any]) -> list:
+    """Return the scenes list, tolerating an older single starting_scene shape."""
+    scenes = pack.get("scenes")
+    if isinstance(scenes, list) and scenes:
+        return [s for s in scenes if isinstance(s, dict)]
+    legacy = pack.get("starting_scene")
+    return [legacy] if isinstance(legacy, dict) else []
+
+
 def _validate(pack: Dict[str, Any]) -> None:
     """Validate the parsed campaign pack, raising CampaignValidationError."""
     campaign = pack.get("campaign")
     if not isinstance(campaign, dict) or not campaign.get("campaign_title"):
         raise CampaignValidationError("Missing 'campaign' object or campaign_title.")
 
-    scene = pack.get("starting_scene")
-    if not isinstance(scene, dict):
-        raise CampaignValidationError("Missing 'starting_scene' object.")
+    scenes = _get_scenes(pack)
+    if len(scenes) < 3:
+        raise CampaignValidationError("Campaign needs at least 3 scenes.")
 
-    hidden = scene.get("hidden_truths") or []
+    for i, scene in enumerate(scenes):
+        label = scene.get("scene_id") or scene.get("scene_title") or f"scene {i + 1}"
+        for field in ("scene_id", "scene_title", "player_visible"):
+            if not str(scene.get(field, "")).strip():
+                raise CampaignValidationError(f"Scene '{label}' missing '{field}'.")
+
+        interactions = scene.get("obvious_interactions") or []
+        if not isinstance(interactions, list) or len(interactions) < 2:
+            raise CampaignValidationError(
+                f"Scene '{label}' needs at least 2 obvious_interactions."
+            )
+
+        checks = scene.get("default_checks") or []
+        if not isinstance(checks, list) or len(checks) < 2:
+            raise CampaignValidationError(
+                f"Scene '{label}' needs at least 2 default_checks."
+            )
+        for index, check in enumerate(checks, start=1):
+            if not isinstance(check, dict):
+                raise CampaignValidationError(
+                    f"Scene '{label}' default_check {index} is not an object."
+                )
+            missing = [f for f in _REQUIRED_CHECK_FIELDS if not str(check.get(f, "")).strip()]
+            if missing:
+                raise CampaignValidationError(
+                    f"Scene '{label}' default_check {index} missing: {', '.join(missing)}."
+                )
+
+    starting = scenes[0]
+    hidden = starting.get("hidden_truths") or []
     if not isinstance(hidden, list) or len(hidden) < 3:
         raise CampaignValidationError("Starting scene needs at least 3 hidden_truths.")
-
-    interactions = scene.get("obvious_interactions") or []
-    if not isinstance(interactions, list) or len(interactions) < 3:
-        raise CampaignValidationError(
-            "Starting scene needs at least 3 obvious_interactions."
-        )
-
-    checks = scene.get("default_checks") or []
-    if not isinstance(checks, list) or len(checks) < 2:
-        raise CampaignValidationError("Starting scene needs at least 2 default_checks.")
-
-    for index, check in enumerate(checks, start=1):
-        if not isinstance(check, dict):
-            raise CampaignValidationError(f"default_check {index} is not an object.")
-        missing = [f for f in _REQUIRED_CHECK_FIELDS if not str(check.get(f, "")).strip()]
-        if missing:
-            raise CampaignValidationError(
-                f"default_check {index} missing fields: {', '.join(missing)}."
-            )
 
 
 def _render_session_outline(outline: Any, campaign: Dict[str, Any]) -> str:
@@ -262,14 +290,30 @@ def generate_campaign_pack(
 
     # Ensure the slug is recorded in the campaign object.
     campaign.setdefault("slug", slug)
-    scene = pack["starting_scene"]
+    scenes = _get_scenes(pack)
+    starting_scene = scenes[0]
+    # Record the starting scene id so loaders can resolve it.
+    campaign["starting_scene"] = starting_scene.get("scene_id") or "starting_scene"
 
     folder = state_store.CAMPAIGNS_DIR / slug
     scenes_dir = folder / "scenes"
     scenes_dir.mkdir(parents=True, exist_ok=True)
 
+    scene_files = []
+    used_names = set()
+    for i, scene in enumerate(scenes):
+        stem = slugify(scene.get("scene_id") or scene.get("scene_title") or f"scene-{i + 1}")
+        # Avoid collisions if two scenes slug to the same name.
+        name = stem
+        suffix = 2
+        while name in used_names:
+            name = f"{stem}-{suffix}"
+            suffix += 1
+        used_names.add(name)
+        _write_json(scenes_dir / f"{name}.json", scene)
+        scene_files.append(f"scenes/{name}.json")
+
     _write_json(folder / "campaign.json", campaign)
-    _write_json(scenes_dir / "starting_scene.json", scene)
     _write_json(folder / "npcs.json", pack.get("npcs", []))
     _write_json(folder / "locations.json", pack.get("locations", []))
     _write_json(folder / "factions.json", pack.get("factions", []))
@@ -279,12 +323,10 @@ def generate_campaign_pack(
         encoding="utf-8",
     )
     (folder / "README.md").write_text(
-        _render_campaign_readme(campaign, scene), encoding="utf-8"
+        _render_campaign_readme(campaign, starting_scene), encoding="utf-8"
     )
 
-    files = [
-        "campaign.json",
-        "scenes/starting_scene.json",
+    files = ["campaign.json"] + scene_files + [
         "npcs.json",
         "locations.json",
         "factions.json",

@@ -298,8 +298,11 @@ Typical flow from generation to playing:
 /new-campaign low magic coastal folk horror, strange lights at sea
 /campaigns
 /load-campaign whispers-in-the-tide
-/opening
 /start-session
+/scenes
+/exits
+/go smugglers-tunnels
+/where
 ```
 
 - `/opening` prints a clean **player-facing** opening for the active campaign
@@ -309,6 +312,22 @@ Typical flow from generation to playing:
   marker to the local session log, clearing any pending check.
 - Neither command **calls the model** or reveals hidden truths, NPC secrets,
   faction agendas, or the mystery's answer.
+
+##### Multiple scenes and travel
+
+Generated campaigns contain several linked scenes. Move between them with:
+
+- `/scenes` — list the scenes in the active campaign (the current one is
+  marked). For the example campaign it reports the single built-in scene.
+- `/exits` — show the current scene's exits (label, target scene, description).
+- `/go <scene-id>` — switch the current scene to another scene in the campaign.
+- `/where` — show the active campaign and current scene.
+
+`/go` is **deterministic and does not call the model**: it saves the new scene
+to `Shared/ai_dm/saves/current_scene.json`, clears any pending check, logs a
+scene-change note, and prints the new scene's opening. The current scene drives
+default checks and scene-aware action detection, so after `/go` your actions
+are resolved against the new scene's checks.
 
 #### Linting and repair
 

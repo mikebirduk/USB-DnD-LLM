@@ -17,6 +17,10 @@ Commands:
     /new-campaign <seed>   generate a local campaign pack from a seed
     /opening          show the current campaign opening (player-facing)
     /start-session    begin the session (logs a start marker)
+    /scenes           list scenes in the active generated campaign
+    /exits            show exits from the current scene
+    /go <scene-id>    move the current scene to another scene
+    /where            show the current campaign and scene
     /roll <formula>   roll dice; resolves a pending check if one is active
     /rollcheck        roll the active character's modifier for the pending check
     /character        show the active character sheet
@@ -83,7 +87,8 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print("  Type an action to play, or /help for the full command list.")
     print(
         "  Campaigns: /campaigns  /load-campaign <slug>  /opening  "
-        "/start-session  /active-campaign  /reset-campaign  /new-campaign <seed>"
+        "/start-session  /scenes  /exits  /go <id>  /where  /active-campaign  "
+        "/reset-campaign  /new-campaign <seed>"
     )
     print("=" * 60)
     print()
@@ -293,6 +298,77 @@ def _handle_start_session(ctx: Ctx) -> None:
     )
 
 
+def _handle_scenes(ctx: Ctx) -> None:
+    """List scenes in the active generated campaign."""
+    if not state_store.load_active_campaign():
+        print("Current campaign uses the built-in example scene only.\n")
+        return
+    scenes = state_store.list_campaign_scenes()
+    if not scenes:
+        print("Current campaign uses the built-in example scene only.\n")
+        return
+    print("\nCampaign scenes:\n")
+    for scene in scenes:
+        print(f"- {scene['scene_id']}")
+        print(f"  {scene['scene_title']}")
+        print(f"  Current: {'yes' if scene['is_current'] else 'no'}\n")
+
+
+def _handle_exits(ctx: Ctx) -> None:
+    """List exits from the current scene."""
+    scene = state_store.get_current_scene()
+    exits = scene.get("exits") or []
+    if not exits:
+        print("No explicit exits are defined for this scene.")
+        print("You can still describe where you want to go, and the DM may "
+              "handle it narratively.\n")
+        return
+    print("\nAvailable exits:\n")
+    for exit_ in exits:
+        if not isinstance(exit_, dict):
+            continue
+        print(f"- {exit_.get('label', '(unlabelled)')}")
+        print(f"  Target: {exit_.get('target_scene_id', '?')}")
+        desc = str(exit_.get("description", "")).strip()
+        if desc:
+            print(f"  {desc}")
+        print()
+
+
+def _handle_go(scene_id: str, ctx: Ctx) -> None:
+    """Move the active current scene to another campaign scene (no model call)."""
+    scene_id = scene_id.strip()
+    if not scene_id:
+        print("Usage: /go <scene-id>   (see /scenes)\n")
+        return
+    if not state_store.load_active_campaign():
+        print("No active generated campaign. Load one with /load-campaign.\n")
+        return
+
+    scene = state_store.find_scene_by_id(scene_id)
+    if not scene:
+        print(f"Scene not found: {scene_id}")
+        print("Use /scenes to list available scenes.\n")
+        return
+
+    state_store.save_current_scene(scene)
+    state_store.clear_pending_check()
+    scene_title = scene.get("scene_title", "Untitled scene")
+    state_store.append_note(f"Moved to scene: {scene_title}")
+
+    print(f"\nMoved to scene: {scene_title}\n")
+    print(dm_engine.format_campaign_opening(ctx.campaign, scene) + "\n")
+
+
+def _handle_where(ctx: Ctx) -> None:
+    """Show the active campaign and the current scene."""
+    scene = state_store.get_current_scene()
+    print(f"\nCampaign: {ctx.campaign.get('campaign_title', 'Example Campaign')}")
+    print(f"Current scene: {scene.get('scene_title', '(none)')}")
+    print(f"Scene ID: {scene.get('scene_id', '(none)')}")
+    print(f"Location: {scene.get('location', 'unknown')}\n")
+
+
 def _handle_active_campaign(ctx: Ctx) -> None:
     """Show the active campaign and current scene (no model call)."""
     active = state_store.load_active_campaign()
@@ -331,6 +407,10 @@ def _handle_help() -> None:
         "  /new-campaign <seed>       generate a new campaign pack\n"
         "  /opening                   show the current campaign opening\n"
         "  /start-session             begin the current campaign session\n"
+        "  /scenes                    list scenes in the active campaign\n"
+        "  /exits                     show exits from the current scene\n"
+        "  /go <scene-id>             move to another scene\n"
+        "  /where                     show current campaign and scene\n"
         "  /rule <query>              look up local rules\n"
         "  /rules-context <text>      preview rules context for text\n"
         "  /askrule <question>        answer a rules question\n"
@@ -980,6 +1060,22 @@ def main() -> int:
 
         if player_input == "/start-session":
             _handle_start_session(ctx)
+            continue
+
+        if player_input == "/scenes":
+            _handle_scenes(ctx)
+            continue
+
+        if player_input == "/exits":
+            _handle_exits(ctx)
+            continue
+
+        if player_input == "/go" or player_input.startswith("/go "):
+            _handle_go(player_input[len("/go"):], ctx)
+            continue
+
+        if player_input == "/where":
+            _handle_where(ctx)
             continue
 
         if player_input == "/new-campaign" or player_input.startswith("/new-campaign "):

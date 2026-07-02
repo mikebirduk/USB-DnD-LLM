@@ -130,119 +130,187 @@ def _is_title_trigger(trigger: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Scene loading helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_all_scenes(pack_dir: Path) -> list:
+    """Return [(relpath, path, scene_dict)] for each scene JSON in the pack."""
+    scenes_dir = Path(pack_dir) / "scenes"
+    out = []
+    if scenes_dir.exists():
+        for path in sorted(scenes_dir.glob("*.json")):
+            data = _load_json(path)
+            if isinstance(data, dict):
+                out.append((f"scenes/{path.name}", path, data))
+    return out
+
+
+def _scene_id_set(scenes) -> set:
+    ids = set()
+    for _rel, path, data in scenes:
+        ids.add(str(data.get("scene_id", "")).strip().lower())
+        ids.add(path.stem.lower())
+    ids.discard("")
+    return ids
+
+
+def _starting_scene_stem(pack_dir: Path, scenes) -> Optional[str]:
+    """Return the filename stem of the starting scene (by campaign.starting_scene)."""
+    campaign = _load_json(Path(pack_dir) / "campaign.json") or {}
+    target = str(campaign.get("starting_scene", "")).strip().lower()
+    if target:
+        for _rel, path, data in scenes:
+            if str(data.get("scene_id", "")).strip().lower() == target or path.stem.lower() == target:
+                return path.stem
+    return scenes[0][1].stem if scenes else None
+
+
+# ---------------------------------------------------------------------------
 # Linting (read-only)
 # ---------------------------------------------------------------------------
 
 
-def lint_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
-    """Return a list of lint issues for a campaign pack (read-only)."""
-    pack_dir = Path(pack_dir)
+def _lint_check(check: Any, index: int, scene_file: str) -> List[Dict[str, Any]]:
+    """Lint a single default check; returns issues."""
     issues: List[Dict[str, Any]] = []
-
-    scene = _load_json(_scene_path(pack_dir))
-    if scene is None:
-        issues.append(_issue(
-            "error", "scenes/starting_scene.json", "",
-            "Missing or unparseable starting scene.", "Re-generate the pack.",
-        ))
+    base = f"default_checks[{index}]"
+    if not isinstance(check, dict):
+        issues.append(_issue("error", scene_file, base, "Check is not an object."))
         return issues
 
-    scene_file = "scenes/starting_scene.json"
-    checks = scene.get("default_checks") or []
-    for index, check in enumerate(checks):
-        base = f"default_checks[{index}]"
-        if not isinstance(check, dict):
-            issues.append(_issue("error", scene_file, base, "Check is not an object."))
-            continue
+    for field in _REQUIRED_CHECK_FIELDS:
+        if not str(check.get(field, "")).strip():
+            issues.append(_issue(
+                "error", scene_file, f"{base}.{field}",
+                f"Missing required field '{field}'.",
+            ))
 
-        for field in _REQUIRED_CHECK_FIELDS:
-            if not str(check.get(field, "")).strip():
-                issues.append(_issue(
-                    "error", scene_file, f"{base}.{field}",
-                    f"Missing required field '{field}'.",
-                ))
+    skill = str(check.get("skill", "")).strip()
+    ability = str(check.get("ability", "")).strip()
+    trigger = str(check.get("trigger", "")).strip()
+    success = str(check.get("success", "")).strip()
+    failure = str(check.get("failure", "")).strip()
 
-        skill = str(check.get("skill", "")).strip()
-        ability = str(check.get("ability", "")).strip()
-        trigger = str(check.get("trigger", "")).strip()
-        success = str(check.get("success", "")).strip()
-        failure = str(check.get("failure", "")).strip()
+    try:
+        dc = int(check.get("dc"))
+        if dc < 10 or dc > 20:
+            issues.append(_issue(
+                "warning", scene_file, f"{base}.dc",
+                f"DC {dc} is outside the usual 10-20 range.", "Clamp the DC to 10-20.",
+            ))
+    except (TypeError, ValueError):
+        issues.append(_issue("warning", scene_file, f"{base}.dc", "DC is not numeric."))
 
-        # DC range.
-        try:
-            dc = int(check.get("dc"))
-            if dc < 10 or dc > 20:
-                issues.append(_issue(
-                    "warning", scene_file, f"{base}.dc",
-                    f"DC {dc} is outside the usual 10-20 range.",
-                    "Clamp the DC to 10-20.",
-                ))
-        except (TypeError, ValueError):
-            issues.append(_issue("warning", scene_file, f"{base}.dc", "DC is not numeric."))
-
-        # Skill/ability pairing.
-        if skill in SKILL_DEFAULT_ABILITIES:
-            expected = SKILL_DEFAULT_ABILITIES[skill]
-            if ability != expected:
-                issues.append(_issue(
-                    "warning", scene_file, base,
-                    f"{ability} ({skill}) is a non-standard pairing.",
-                    f"Use {expected} ({skill}).",
-                ))
-
-        # Social interaction using a physical skill.
-        social = any(w in trigger.lower() or w in success.lower() for w in _SOCIAL_WORDS)
-        if skill in _PHYSICAL_SKILLS and social:
+    if skill in SKILL_DEFAULT_ABILITIES:
+        expected = SKILL_DEFAULT_ABILITIES[skill]
+        if ability != expected:
             issues.append(_issue(
                 "warning", scene_file, base,
-                f"Social interaction uses {ability} ({skill}); a Charisma skill "
-                "may be more appropriate.",
-                "Use Charisma (Persuasion), Charisma (Deception), Charisma "
-                "(Intimidation), or Wisdom (Insight).",
+                f"{ability} ({skill}) is a non-standard pairing.",
+                f"Use {expected} ({skill}).",
             ))
 
-        # Trigger better skill suggestion.
-        suggested = _suggested_skill(trigger)
-        if suggested and skill and suggested != skill and not (skill in _PHYSICAL_SKILLS and social):
-            issues.append(_issue(
-                "warning", scene_file, f"{base}.trigger",
-                f"Trigger wording suggests {SKILL_DEFAULT_ABILITIES[suggested]} "
-                f"({suggested}) rather than {skill}.",
-                f"Consider {SKILL_DEFAULT_ABILITIES[suggested]} ({suggested}).",
-            ))
+    social = any(w in trigger.lower() or w in success.lower() for w in _SOCIAL_WORDS)
+    if skill in _PHYSICAL_SKILLS and social:
+        issues.append(_issue(
+            "warning", scene_file, base,
+            f"Social interaction uses {ability} ({skill}); a Charisma skill may "
+            "be more appropriate.",
+            "Use Charisma (Persuasion), Charisma (Deception), Charisma "
+            "(Intimidation), or Wisdom (Insight).",
+        ))
 
-        # Title-style trigger.
-        if _is_title_trigger(trigger):
-            issues.append(_issue(
-                "warning", scene_file, f"{base}.trigger",
-                f"Trigger '{trigger}' reads like a scene title, not a player "
-                "action phrase.",
-                "Rewrite as comma-separated player actions (e.g. 'talk to X, "
-                "ask X about Y').",
-            ))
+    suggested = _suggested_skill(trigger)
+    if suggested and skill and suggested != skill and not (skill in _PHYSICAL_SKILLS and social):
+        issues.append(_issue(
+            "warning", scene_file, f"{base}.trigger",
+            f"Trigger wording suggests {SKILL_DEFAULT_ABILITIES[suggested]} "
+            f"({suggested}) rather than {skill}.",
+            f"Consider {SKILL_DEFAULT_ABILITIES[suggested]} ({suggested}).",
+        ))
 
-        # Success reveals too much / too vague.
-        if any(p in success.lower() for p in _REVEALS_TOO_MUCH):
-            issues.append(_issue(
-                "warning", scene_file, f"{base}.success",
-                "Success may reveal a major secret too early.",
-                "Reveal a partial clue; keep deeper secrets for later.",
-            ))
-        if success and len(success) < 15:
-            issues.append(_issue(
-                "warning", scene_file, f"{base}.success", "Success text is very vague.",
-            ))
+    if _is_title_trigger(trigger):
+        issues.append(_issue(
+            "warning", scene_file, f"{base}.trigger",
+            f"Trigger '{trigger}' reads like a scene title, not a player action "
+            "phrase.",
+            "Rewrite as comma-separated player actions (e.g. 'talk to X, ask X "
+            "about Y').",
+        ))
 
-        # Failure mirrors success.
-        if success and failure and success.lower() == failure.lower():
-            issues.append(_issue(
-                "warning", scene_file, f"{base}.failure",
-                "Failure text is identical to success.",
-                "On failure preserve uncertainty, add delay/ambiguity, or "
-                "increase risk instead of revealing the same information.",
-            ))
+    if any(p in success.lower() for p in _REVEALS_TOO_MUCH):
+        issues.append(_issue(
+            "warning", scene_file, f"{base}.success",
+            "Success may reveal a major secret too early.",
+            "Reveal a partial clue; keep deeper secrets for later.",
+        ))
+    if success and len(success) < 15:
+        issues.append(_issue(
+            "warning", scene_file, f"{base}.success", "Success text is very vague.",
+        ))
 
-    # Scene clocks that start hot.
+    if success and failure and success.lower() == failure.lower():
+        issues.append(_issue(
+            "warning", scene_file, f"{base}.failure",
+            "Failure text is identical to success.",
+            "On failure preserve uncertainty, add delay/ambiguity, or increase "
+            "risk instead of revealing the same information.",
+        ))
+    return issues
+
+
+def _lint_scene(scene_file, scene, is_starting, scene_ids) -> List[Dict[str, Any]]:
+    """Lint a single scene; returns issues."""
+    issues: List[Dict[str, Any]] = []
+
+    for field in ("scene_id", "scene_title", "player_visible"):
+        if not str(scene.get(field, "")).strip():
+            issues.append(_issue("error", scene_file, field, f"Missing '{field}'."))
+
+    interactions = scene.get("obvious_interactions") or []
+    if not isinstance(interactions, list) or len(interactions) < 2:
+        issues.append(_issue(
+            "warning", scene_file, "obvious_interactions",
+            "Scene has fewer than 2 obvious_interactions.",
+        ))
+
+    checks = scene.get("default_checks") or []
+    if not isinstance(checks, list) or len(checks) < 2:
+        issues.append(_issue(
+            "warning", scene_file, "default_checks",
+            "Scene has fewer than 2 default_checks.",
+        ))
+    for index, check in enumerate(checks if isinstance(checks, list) else []):
+        issues += _lint_check(check, index, scene_file)
+
+    # Exits.
+    exits = scene.get("exits") or []
+    for index, exit_ in enumerate(exits):
+        base = f"exits[{index}]"
+        if not isinstance(exit_, dict):
+            issues.append(_issue("error", scene_file, base, "Exit is not an object."))
+            continue
+        for field in ("label", "target_scene_id", "description"):
+            if not str(exit_.get(field, "")).strip():
+                issues.append(_issue(
+                    "warning", scene_file, f"{base}.{field}",
+                    f"Exit missing '{field}'.",
+                ))
+        target = str(exit_.get("target_scene_id", "")).strip().lower()
+        if target and target not in scene_ids:
+            issues.append(_issue(
+                "warning", scene_file, f"{base}.target_scene_id",
+                f"Exit target '{target}' does not match any scene.",
+                "Point target_scene_id at an existing scene_id.",
+            ))
+    if is_starting and not exits:
+        issues.append(_issue(
+            "warning", scene_file, "exits",
+            "Starting scene has no exits; players can't travel onward.",
+            "Add at least one exit to another scene.",
+        ))
+
     for index, clock in enumerate(scene.get("scene_clocks") or []):
         if isinstance(clock, dict):
             try:
@@ -257,7 +325,6 @@ def lint_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
                     "Start the clock at 0, or set \"starts_active\": true.",
                 ))
 
-    # Hidden truths that read like player-facing rumours.
     for index, truth in enumerate(scene.get("hidden_truths") or []):
         low = str(truth).lower()
         if any(cue in low for cue in ("some say", "rumour", "rumor", "people say",
@@ -268,8 +335,34 @@ def lint_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
                 "rumours.json (player-visible).",
                 "Move rumour-style hearsay to rumours.json.",
             ))
+    return issues
 
-    # Session outline artefacts.
+
+def lint_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
+    """Return a list of lint issues for a campaign pack (read-only)."""
+    pack_dir = Path(pack_dir)
+    issues: List[Dict[str, Any]] = []
+
+    scenes = _load_all_scenes(pack_dir)
+    if not scenes:
+        issues.append(_issue(
+            "error", "scenes/", "", "No scene files found.", "Re-generate the pack.",
+        ))
+        return issues
+
+    if len(scenes) < 3:
+        issues.append(_issue(
+            "warning", "scenes/", "",
+            f"Campaign has {len(scenes)} scene(s); at least 3 is recommended.",
+            "Regenerate or add scenes (the linter does not invent scenes).",
+        ))
+
+    scene_ids = _scene_id_set(scenes)
+    starting_stem = _starting_scene_stem(pack_dir, scenes)
+    for relpath, path, scene in scenes:
+        is_starting = path.stem == starting_stem
+        issues += _lint_scene(relpath, scene, is_starting, scene_ids)
+
     outline_path = pack_dir / "session_01_outline.md"
     if outline_path.exists():
         text = outline_path.read_text(encoding="utf-8")
@@ -296,14 +389,9 @@ def _rewrite_title_trigger(trigger: str) -> str:
     return f"talk to {subject}, ask {subject} about the situation, read their motives"
 
 
-def repair_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
-    """Apply safe deterministic repairs to a pack; return a list of actions."""
-    pack_dir = Path(pack_dir)
+def _repair_scene(scene: Dict[str, Any], scene_file: str) -> List[Dict[str, Any]]:
+    """Apply deterministic repairs to a single scene dict; returns actions."""
     repairs: List[Dict[str, Any]] = []
-    scene_file = "scenes/starting_scene.json"
-    scene = _load_json(_scene_path(pack_dir))
-    if scene is None:
-        return repairs
 
     for index, check in enumerate(scene.get("default_checks") or []):
         if not isinstance(check, dict):
@@ -378,9 +466,21 @@ def repair_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
                 f"Reset clock '{clock.get('name', '?')}' from {value} to 0.",
             ))
 
-    _write_json(_scene_path(pack_dir), scene)
+    return repairs
 
-    # 6. Regenerate the session outline deterministically from the pack.
+
+def repair_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
+    """Apply safe deterministic repairs across all scenes; return actions."""
+    pack_dir = Path(pack_dir)
+    repairs: List[Dict[str, Any]] = []
+
+    for relpath, path, scene in _load_all_scenes(pack_dir):
+        scene_repairs = _repair_scene(scene, relpath)
+        if scene_repairs:
+            _write_json(path, scene)
+            repairs += scene_repairs
+
+    # Regenerate the session outline deterministically from the whole pack.
     if rebuild_session_outline(pack_dir):
         repairs.append(_issue(
             "repair", "session_01_outline.md", "",
@@ -390,12 +490,52 @@ def repair_campaign_pack(pack_dir: Path) -> List[Dict[str, Any]]:
     return repairs
 
 
+def _scene_flow(pack_dir: Path, scenes) -> list:
+    """Order scene titles by following exits from the starting scene."""
+    by_stem = {path.stem: data for _rel, path, data in scenes}
+    by_id = {}
+    for _rel, path, data in scenes:
+        by_id[str(data.get("scene_id", "")).strip().lower()] = data
+        by_id[path.stem.lower()] = data
+
+    start_stem = _starting_scene_stem(pack_dir, scenes)
+    order = []
+    visited = set()
+    current = by_stem.get(start_stem)
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        order.append(current.get("scene_title", "Untitled scene"))
+        nxt = None
+        for exit_ in current.get("exits") or []:
+            if isinstance(exit_, dict):
+                target = str(exit_.get("target_scene_id", "")).strip().lower()
+                candidate = by_id.get(target)
+                if candidate is not None and id(candidate) not in visited:
+                    nxt = candidate
+                    break
+        current = nxt
+
+    # Append any scenes not reachable by exits, in file order.
+    for _rel, _path, data in scenes:
+        title = data.get("scene_title", "Untitled scene")
+        if title not in order:
+            order.append(title)
+    return order
+
+
 def rebuild_session_outline(pack_dir: Path) -> bool:
-    """Rebuild session_01_outline.md from the pack JSON. Returns True if written."""
+    """Rebuild session_01_outline.md from all scenes. Returns True if written."""
     pack_dir = Path(pack_dir)
     campaign = _load_json(pack_dir / "campaign.json") or {}
-    scene = _load_json(_scene_path(pack_dir)) or {}
     npcs = _load_json(pack_dir / "npcs.json") or []
+    scenes = _load_all_scenes(pack_dir)
+
+    starting_stem = _starting_scene_stem(pack_dir, scenes)
+    starting = {}
+    for _rel, path, data in scenes:
+        if path.stem == starting_stem:
+            starting = data
+            break
 
     def bullets(items):
         items = [str(i).strip() for i in (items or []) if str(i).strip()]
@@ -404,38 +544,42 @@ def rebuild_session_outline(pack_dir: Path) -> bool:
     npc_lines = bullets([n.get("name") for n in npcs if isinstance(n, dict)])
 
     check_lines = []
-    for check in scene.get("default_checks") or []:
+    for check in starting.get("default_checks") or []:
         if not isinstance(check, dict):
             continue
         trigger = str(check.get("trigger", "")).strip()
         label = trigger.split(",")[0].strip().capitalize() or "Check"
-        skill = check.get("skill", "")
-        ability = check.get("ability", "")
-        dc = check.get("dc", "")
-        success = str(check.get("success", "")).strip()
-        failure = str(check.get("failure", "")).strip()
         check_lines.append(
-            f"- **{label}** — {ability} ({skill}), DC {dc}  \n"
-            f"  Success: {success}  \n"
-            f"  Failure: {failure}"
+            f"- **{label}** — {check.get('ability', '')} ({check.get('skill', '')}), "
+            f"DC {check.get('dc', '')}  \n"
+            f"  Success: {str(check.get('success', '')).strip()}  \n"
+            f"  Failure: {str(check.get('failure', '')).strip()}"
         )
     checks_block = "\n".join(check_lines) if check_lines else "_(TBD)_"
 
-    opening = str(scene.get("current_situation") or campaign.get("summary") or "").strip()
+    scene_titles = [data.get("scene_title", "Untitled scene") for _r, _p, data in scenes]
+    flow = _scene_flow(pack_dir, scenes)
+    flow_line = " → ".join(flow) if flow else "_(TBD)_"
+
+    opening = str(starting.get("current_situation") or campaign.get("summary") or "").strip()
     outline = (
         "# Session 1 Outline\n\n"
         "## Opening Situation\n\n"
         f"{opening or '_(TBD)_'}\n\n"
+        "## Scenes\n\n"
+        f"{bullets(scene_titles)}\n\n"
+        "## Possible Scene Flow\n\n"
+        f"{flow_line}\n\n"
         "## Key NPCs\n\n"
         f"{npc_lines}\n\n"
         "## Likely Player Actions\n\n"
-        f"{bullets(scene.get('obvious_interactions'))}\n\n"
+        f"{bullets(starting.get('obvious_interactions'))}\n\n"
         "## Possible Checks\n\n"
         f"{checks_block}\n\n"
         "## Secrets That Can Be Discovered\n\n"
-        f"{bullets(scene.get('hidden_truths'))}\n\n"
+        f"{bullets(starting.get('hidden_truths'))}\n\n"
         "## Escalation\n\n"
-        f"{bullets([c.get('description') for c in (scene.get('scene_clocks') or []) if isinstance(c, dict)])}\n\n"
+        f"{bullets([c.get('description') for c in (starting.get('scene_clocks') or []) if isinstance(c, dict)])}\n\n"
         "## Ending Options\n\n"
         f"{bullets(campaign.get('open_threads'))}\n"
     )

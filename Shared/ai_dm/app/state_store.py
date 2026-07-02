@@ -188,14 +188,46 @@ def load_campaign_pack(slug: str) -> Optional[Dict[str, Any]]:
     except (json.JSONDecodeError, OSError):
         return None
 
-    scene = None
-    scene_file = folder / "scenes" / "starting_scene.json"
-    if scene_file.exists():
-        try:
-            scene = json.loads(scene_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            scene = None
+    scene = _load_starting_scene(folder, campaign)
     return {"slug": slug, "dir": str(folder), "campaign": campaign, "scene": scene}
+
+
+def _read_scene_file(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _load_starting_scene(folder: Path, campaign: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Resolve a pack's starting scene by campaign.starting_scene, then fallbacks."""
+    scenes_dir = folder / "scenes"
+    if not scenes_dir.exists():
+        return None
+    target = str((campaign or {}).get("starting_scene", "")).strip().lower()
+    files = sorted(scenes_dir.glob("*.json"))
+    # 1. Match campaign.starting_scene against scene_id or filename stem.
+    if target:
+        for path in files:
+            data = _read_scene_file(path)
+            if data and (
+                str(data.get("scene_id", "")).strip().lower() == target
+                or path.stem.lower() == target
+            ):
+                return data
+    # 2. Legacy starting_scene.json.
+    legacy = scenes_dir / "starting_scene.json"
+    if legacy.exists():
+        data = _read_scene_file(legacy)
+        if data:
+            return data
+    # 3. First scene file.
+    for path in files:
+        data = _read_scene_file(path)
+        if data:
+            return data
+    return None
 
 
 def save_active_campaign(active: Dict[str, Any]) -> None:
@@ -243,6 +275,77 @@ def ensure_campaign_state() -> tuple:
         return campaign, scene
 
     return load_campaign(), ensure_current_scene()
+
+
+def _active_campaign_dir() -> Optional[Path]:
+    """Return the active generated campaign's folder, or None."""
+    active = load_active_campaign()
+    if active and active.get("slug"):
+        folder = CAMPAIGNS_DIR / active["slug"]
+        if folder.exists():
+            return folder
+    return None
+
+
+def get_current_scene() -> Dict[str, Any]:
+    """Return the current scene dict (default scene if none is set)."""
+    return load_current_scene() or ensure_current_scene()
+
+
+def list_campaign_scenes(slug: Optional[str] = None) -> list:
+    """List scenes for a campaign (active campaign if slug is None).
+
+    Each item: {"scene_id", "scene_title", "filename", "is_current"}. Returns
+    [] when there is no active generated campaign / no scenes folder.
+    """
+    folder = (CAMPAIGNS_DIR / slug) if slug else _active_campaign_dir()
+    if not folder or not (folder / "scenes").exists():
+        return []
+    current = load_current_scene() or {}
+    current_id = str(current.get("scene_id", "")).strip().lower()
+    scenes = []
+    for path in sorted((folder / "scenes").glob("*.json")):
+        data = _read_scene_file(path)
+        if not data:
+            continue
+        scene_id = str(data.get("scene_id", path.stem))
+        is_current = bool(current_id) and (
+            scene_id.lower() == current_id or path.stem.lower() == current_id
+        )
+        scenes.append(
+            {
+                "scene_id": scene_id,
+                "scene_title": data.get("scene_title", scene_id),
+                "filename": path.name,
+                "is_current": is_current,
+            }
+        )
+    return scenes
+
+
+def find_scene_by_id(scene_id: str) -> Optional[Dict[str, Any]]:
+    """Find a scene in the active campaign by scene_id or filename stem."""
+    folder = _active_campaign_dir()
+    if not folder:
+        return None
+    scenes_dir = folder / "scenes"
+    if not scenes_dir.exists():
+        return None
+    target = (scene_id or "").strip().lower()
+    if not target:
+        return None
+    for path in sorted(scenes_dir.glob("*.json")):
+        data = _read_scene_file(path)
+        if not data:
+            continue
+        if str(data.get("scene_id", "")).strip().lower() == target or path.stem.lower() == target:
+            return data
+    return None
+
+
+def load_campaign_scene(scene_id_or_slug: str) -> Optional[Dict[str, Any]]:
+    """Load a scene from the active campaign by scene_id or filename stem."""
+    return find_scene_by_id(scene_id_or_slug)
 
 
 def load_installed_rules() -> Optional[Dict[str, Any]]:

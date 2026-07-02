@@ -311,6 +311,16 @@ def build_scene_block(scene: Dict[str, Any]) -> str:
         "Obvious interactions:",
         _format_list(interactions),
     ]
+
+    exits = scene.get("exits") or []
+    exit_labels = [
+        str(e.get("label", "")).strip()
+        for e in exits
+        if isinstance(e, dict) and str(e.get("label", "")).strip()
+    ]
+    if exit_labels:
+        lines += ["", "Exits (the player may travel):", _format_list(exit_labels)]
+
     return "\n".join(lines)
 
 
