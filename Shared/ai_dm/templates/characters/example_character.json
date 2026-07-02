@@ -16,6 +16,12 @@
     "wisdom": 11,
     "charisma": 9
   },
+  "proficiency_bonus": 2,
+  "skill_proficiencies": [
+    "Athletics",
+    "Perception"
+  ],
+  "skill_expertise": [],
   "inventory": [],
   "conditions": []
 }

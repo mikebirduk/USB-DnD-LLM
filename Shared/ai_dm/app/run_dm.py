@@ -11,6 +11,9 @@ DM reply, and append the exchange to the local session log.
 
 Commands:
     /roll <formula>   roll dice; resolves a pending check if one is active
+    /rollcheck        roll the active character's modifier for the pending check
+    /character        show the active character sheet
+    /mod <ability> [skill]   show the character's modifier for an ability/skill
     /check            show the current pending check, if any
     /scene            show the player-facing view of the current scene
     /scene-debug      show the full current scene JSON (dev only)
@@ -34,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import action_detector
+import character
 import dice
 import dm_engine
 import ollama_client
@@ -58,9 +62,10 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print(f"Ollama endpoint: {ollama_client.OLLAMA_HOST}")
     print("-" * 60)
     print(
-        "  Type an action to play. Commands: /roll <formula>  /check  /scene  "
-        "/scene-debug  /reset-scene  /detect <action>  /narrate <action>  "
-        "/debug-last  /recap  /quit"
+        "  Type an action to play. Commands: /roll <formula>  /rollcheck  "
+        "/character  /mod <ability> [skill]  /check  /scene  /scene-debug  "
+        "/reset-scene  /detect <action>  /narrate <action>  /debug-last  "
+        "/recap  /quit"
     )
     print("=" * 60)
     print()
@@ -200,37 +205,22 @@ def _handle_debug_last() -> None:
     print()
 
 
-def _handle_roll(formula: str, ctx: Ctx) -> None:
-    """Roll a dice formula, print the result, and either log it as a plain
-    roll or resolve it against a pending check.
-
-    Shows a clear error and does not crash on an invalid formula.
-    """
-    formula = formula.strip()
-    if not formula:
-        print("Usage: /roll <formula>   e.g. /roll 1d20+3\n")
-        return
-
-    try:
-        result = dice.roll_dice(formula)
-    except ValueError as exc:
-        print(f"Invalid dice formula: {exc}\n")
-        return
-
+def _print_roll(result: dict) -> None:
+    """Print a dice-roll result in the standard readable format."""
     print(f"\nRoll: {result['formula']}")
     print(f"Dice: {result['rolls']}")
     print(f"Modifier: {result['modifier']:+d}")
     print(f"Total: {result['total']}")
 
-    pending = state_store.load_pending_check()
-    dc = _coerce_dc(pending.get("dc")) if pending else None
 
-    if not pending or dc is None:
-        # No resolvable pending check — behave as a normal manual roll.
-        print()
-        state_store.append_roll_entry(result)
-        return
+def _resolve_pending(result: dict, pending: dict, ctx: Ctx) -> None:
+    """Resolve a rolled result against a pending check and hand off to the DM.
 
+    Determines success/failure vs the DC, applies scene-defined authoritative
+    outcome text, logs the resolution, clears the pending check, and asks the
+    DM to narrate (with follow-up checks disabled).
+    """
+    dc = _coerce_dc(pending.get("dc"))
     outcome = "success" if result["total"] >= dc else "failure"
     check_summary = dm_engine.format_check_summary(pending)
     reason = str(pending.get("reason", "")).strip()
@@ -252,8 +242,6 @@ def _handle_roll(formula: str, ctx: Ctx) -> None:
     )
     state_store.clear_pending_check()
 
-    # Ask the DM to narrate the (already-resolved) outcome. Follow-up checks
-    # are not allowed immediately after resolution.
     prompt = dm_engine.build_roll_resolution_prompt(
         pending, result, outcome, authoritative_outcome
     )
@@ -263,6 +251,160 @@ def _handle_roll(formula: str, ctx: Ctx) -> None:
         player_label="(rolled for the pending check)",
         allow_requested_check=False,
     )
+
+
+def _handle_roll(formula: str, ctx: Ctx) -> None:
+    """Roll a dice formula, print the result, and either log it as a plain
+    roll or resolve it against a pending check.
+
+    Shows a clear error and does not crash on an invalid formula.
+    """
+    formula = formula.strip()
+    if not formula:
+        print("Usage: /roll <formula>   e.g. /roll 1d20+3\n")
+        return
+
+    try:
+        result = dice.roll_dice(formula)
+    except ValueError as exc:
+        print(f"Invalid dice formula: {exc}\n")
+        return
+
+    _print_roll(result)
+
+    pending = state_store.load_pending_check()
+    dc = _coerce_dc(pending.get("dc")) if pending else None
+
+    if not pending or dc is None:
+        # No resolvable pending check — behave as a normal manual roll.
+        print()
+        state_store.append_roll_entry(result)
+        return
+
+    _resolve_pending(result, pending, ctx)
+
+
+def _load_character_safe():
+    """Load the active character, returning None (with a message) on error."""
+    try:
+        return state_store.load_character()
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        print(f"Could not load character: {exc}\n", file=sys.stderr)
+        return None
+
+
+def _format_score(score) -> str:
+    """Render an ability score for display, or 'unknown' if missing."""
+    return str(score) if score is not None else "unknown"
+
+
+def _handle_rollcheck(ctx: Ctx) -> None:
+    """Roll the active character's modifier for the pending check and resolve it."""
+    pending = state_store.load_pending_check()
+    if not pending:
+        print("No pending check.\n")
+        return
+
+    char = _load_character_safe()
+    if char is None:
+        return
+
+    ability = pending.get("ability")
+    skill = pending.get("skill")
+    mod = character.get_skill_modifier(char, ability, skill)
+    name = char.get("name", "the character")
+    check_summary = dm_engine.format_check_summary(pending)
+
+    print(f"\nRolling pending check for {name}:")
+    print(f"Check: {check_summary}")
+    print(f"Ability score: {ability} {_format_score(mod['ability_score'])}")
+    print(f"Ability modifier: {mod['ability_modifier']:+d}")
+    print(f"Proficient: {'yes' if mod['is_proficient'] else 'no'}")
+    print(f"Expertise: {'yes' if mod['has_expertise'] else 'no'}")
+    print(f"Total modifier: {mod['total_modifier']:+d}")
+    print(f"Formula: {mod['formula']}")
+
+    try:
+        result = dice.roll_dice(mod["formula"])
+    except ValueError as exc:
+        print(f"\nCould not roll computed formula {mod['formula']!r}: {exc}\n")
+        return
+
+    _print_roll(result)
+
+    if _coerce_dc(pending.get("dc")) is None:
+        print("\nPending check has no valid DC; logged as a plain roll.\n")
+        state_store.append_roll_entry(result)
+        state_store.clear_pending_check()
+        return
+
+    _resolve_pending(result, pending, ctx)
+
+
+def _handle_character() -> None:
+    """Print the active character sheet."""
+    char = _load_character_safe()
+    if char is None:
+        return
+
+    hp = char.get("hp") or {}
+    hp_text = (
+        f"{hp.get('current', '?')}/{hp.get('max', '?')}"
+        if isinstance(hp, dict)
+        else str(hp)
+    )
+    print(f"\nName: {char.get('name', 'Unknown')}")
+    print(f"Ancestry: {char.get('ancestry', 'Unknown')}")
+    print(f"Class: {char.get('class', 'Unknown')}")
+    print(f"Level: {char.get('level', '?')}")
+    print(f"HP: {hp_text}")
+    print(f"AC: {char.get('ac', '?')}")
+
+    print("\nAbility scores:")
+    abilities = char.get("abilities") or {}
+    for ability in character.ABILITY_ORDER:
+        score = character.get_ability_score(char, ability)
+        if score is None:
+            continue
+        mod = character.ability_modifier(score)
+        print(f"- {ability.capitalize()}: {score} ({mod:+d})")
+
+    try:
+        prof_bonus = int(char.get("proficiency_bonus", 0))
+    except (TypeError, ValueError):
+        prof_bonus = 0
+    print(f"\nProficiency bonus: {prof_bonus:+d}")
+    profs = char.get("skill_proficiencies") or []
+    expertise = char.get("skill_expertise") or []
+    print(f"Skill proficiencies: {', '.join(profs) if profs else '(none)'}")
+    print(f"Skill expertise: {', '.join(expertise) if expertise else '(none)'}")
+    print()
+
+
+def _handle_mod(args: str) -> None:
+    """Print the modifier for an ability (and optional skill): /mod <ability> [skill]."""
+    parts = args.split()
+    if not parts:
+        print("Usage: /mod <ability> [skill]   e.g. /mod Wisdom Perception\n")
+        return
+
+    ability = parts[0]
+    skill = " ".join(parts[1:]) if len(parts) > 1 else None
+
+    char = _load_character_safe()
+    if char is None:
+        return
+
+    mod = character.get_skill_modifier(char, ability, skill)
+    header = f"{ability} ({skill})" if skill else ability
+    print(f"\n{header}")
+    print(f"Ability score: {_format_score(mod['ability_score'])}")
+    print(f"Ability modifier: {mod['ability_modifier']:+d}")
+    print(f"Proficiency bonus: {mod['proficiency_bonus']:+d}")
+    print(f"Proficient: {'yes' if mod['is_proficient'] else 'no'}")
+    print(f"Expertise: {'yes' if mod['has_expertise'] else 'no'}")
+    print(f"Total modifier: {mod['total_modifier']:+d}")
+    print()
 
 
 def _dm_turn(
@@ -415,6 +557,18 @@ def main() -> int:
 
         if player_input == "/roll" or player_input.startswith("/roll "):
             _handle_roll(player_input[len("/roll"):], ctx)
+            continue
+
+        if player_input == "/rollcheck":
+            _handle_rollcheck(ctx)
+            continue
+
+        if player_input == "/character":
+            _handle_character()
+            continue
+
+        if player_input == "/mod" or player_input.startswith("/mod "):
+            _handle_mod(player_input[len("/mod"):])
             continue
 
         if player_input == "/check":

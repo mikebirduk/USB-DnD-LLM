@@ -1,0 +1,60 @@
+{
+  "scene_id": "old_well_square",
+  "scene_title": "The Old Well at Midnight",
+  "location": "Example Village square",
+  "player_visible": "The village square is empty beneath a low, clouded sky. An old stone well stands beside a dead pine tree. The village bells have rung at midnight for three nights, though no one admits to pulling the ropes.",
+  "sensory_details": [
+    "damp moss on old stone",
+    "cold air rising from the well",
+    "a faint metallic smell",
+    "distant bell echoes"
+  ],
+  "current_situation": "The player stands beside the old well and may investigate it.",
+  "hidden_truths": [
+    "Fresh rope marks on the inner rim show someone climbed down recently.",
+    "A loose stone hides a rusted iron token marked with three vertical lines.",
+    "Something below the well listens when people speak near it."
+  ],
+  "obvious_interactions": [
+    "look into the well",
+    "inspect the stone rim",
+    "listen for movement below",
+    "lower a lantern",
+    "try to climb down",
+    "call into the well"
+  ],
+  "default_checks": [
+    {
+      "trigger": "search stones, inspect rim, look for hidden markings, loose blocks, or signs of recent use",
+      "ability": "Intelligence",
+      "skill": "Investigation",
+      "dc": 13,
+      "success": "The player finds fresh rope marks and notices one stone is slightly loose.",
+      "failure": "The moss and worn stone make it impossible to tell whether the marks are recent."
+    },
+    {
+      "trigger": "listen at the well or try to hear movement below",
+      "ability": "Wisdom",
+      "skill": "Perception",
+      "dc": 13,
+      "success": "The player hears slow, wet breathing from below.",
+      "failure": "The echo of distant bells and the depth of the shaft make it hard to hear anything clearly."
+    },
+    {
+      "trigger": "look down, lower a lantern, or peer into the darkness",
+      "ability": "Wisdom",
+      "skill": "Perception",
+      "dc": 12,
+      "success": "The player sees scratches on the inner stones and a section where moss has been rubbed away.",
+      "failure": "The lantern light catches only slick stone and darkness."
+    }
+  ],
+  "scene_clocks": [
+    {
+      "name": "Something Below Notices",
+      "value": 0,
+      "max": 4,
+      "description": "Noise, calling into the well, or failed checks may increase this clock."
+    }
+  ]
+}

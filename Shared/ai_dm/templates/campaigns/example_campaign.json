@@ -3,6 +3,7 @@
   "tone": "low fantasy mystery",
   "starting_level": 1,
   "current_location": "Example Village",
+  "starting_scene": "old_well_scene",
   "player_visible_summary": "A small village sits beside an old forest.",
   "dm_secrets": [
     "Something beneath the old well is waking."

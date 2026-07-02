@@ -152,10 +152,37 @@ model responds to concrete detail instead of generic atmosphere.
 - `/reset-scene` — reload `old_well_scene.json` from templates and make it the
   active scene
 
+### Character-aware rolling
+
+`/rollcheck` computes the correct dice formula from the pending check and the
+active character sheet — the relevant ability modifier plus the proficiency
+bonus (and expertise, if any) when the check's skill is one the character is
+proficient in — then rolls and resolves it. `/roll <formula>` still works for
+manual rolls.
+
+```text
+I search the stones around the well for hidden markings.
+
+System:
+This action calls for a check:
+Intelligence (Investigation), DC 13
+
+/rollcheck
+```
+
+Use `/character` to view the sheet and `/mod <ability> [skill]` (e.g.
+`/mod Intelligence Investigation`) to preview a modifier without rolling.
+
 Commands inside the loop:
 
 - `/roll <formula>` — roll dice (e.g. `1d20+3`, `2d6`, `1d8-1`); resolves the
   pending check if one is active, otherwise a plain manual roll
+- `/rollcheck` — roll the **active character's** modifier for the pending
+  check (ability modifier + proficiency/expertise), then resolve it
+- `/character` — show the active character sheet (abilities with modifiers,
+  proficiency bonus, skill proficiencies, and expertise)
+- `/mod <ability> [skill]` — show the character's modifier for an ability, or
+  an ability + skill (e.g. `/mod Wisdom Perception`)
 - `/check` — show the current pending check, if any
 - `/detect <action>` — preview the scene check an action would trigger,
   without saving it
