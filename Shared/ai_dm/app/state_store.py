@@ -30,6 +30,7 @@ SESSION_LOG = SAVES_DIR / "current_session.md"
 PENDING_CHECK = SAVES_DIR / "pending_check.json"
 LAST_DM_RESPONSE = SAVES_DIR / "last_dm_response.json"
 CURRENT_SCENE = SAVES_DIR / "current_scene.json"
+ACTIVE_CAMPAIGN = SAVES_DIR / "active_campaign.json"
 
 # Local rules library (generated content is git-ignored).
 RULES_DIR = AI_DM_ROOT / "rules"
@@ -137,6 +138,113 @@ def read_session_log() -> str:
     return SESSION_LOG.read_text(encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Generated campaign packs + active campaign state.
+# ---------------------------------------------------------------------------
+
+
+def list_campaign_packs() -> list:
+    """Return metadata for each generated campaign under campaigns/.
+
+    Each item: {"slug", "title", "tone", "starting_level"}. Packs without a
+    readable campaign.json are skipped.
+    """
+    packs = []
+    if not CAMPAIGNS_DIR.exists():
+        return packs
+    for folder in sorted(p for p in CAMPAIGNS_DIR.iterdir() if p.is_dir()):
+        campaign_file = folder / "campaign.json"
+        if not campaign_file.exists():
+            continue
+        try:
+            data = json.loads(campaign_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        packs.append(
+            {
+                "slug": folder.name,
+                "title": data.get("campaign_title", folder.name),
+                "tone": data.get("tone", "unspecified"),
+                "starting_level": data.get("starting_level", "?"),
+            }
+        )
+    return packs
+
+
+def load_campaign_pack(slug: str) -> Optional[Dict[str, Any]]:
+    """Load a generated pack by slug, returning {slug, dir, campaign, scene}.
+
+    Returns None if the folder or campaign.json is missing/unreadable.
+    """
+    slug = (slug or "").strip()
+    if not slug:
+        return None
+    folder = CAMPAIGNS_DIR / slug
+    campaign_file = folder / "campaign.json"
+    if not campaign_file.exists():
+        return None
+    try:
+        campaign = json.loads(campaign_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    scene = None
+    scene_file = folder / "scenes" / "starting_scene.json"
+    if scene_file.exists():
+        try:
+            scene = json.loads(scene_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            scene = None
+    return {"slug": slug, "dir": str(folder), "campaign": campaign, "scene": scene}
+
+
+def save_active_campaign(active: Dict[str, Any]) -> None:
+    """Persist the active campaign selection to saves/active_campaign.json."""
+    SAVES_DIR.mkdir(parents=True, exist_ok=True)
+    ACTIVE_CAMPAIGN.write_text(
+        json.dumps(active, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def load_active_campaign() -> Optional[Dict[str, Any]]:
+    """Return the active campaign selection, or None if none/unreadable."""
+    if not ACTIVE_CAMPAIGN.exists():
+        return None
+    try:
+        data = json.loads(ACTIVE_CAMPAIGN.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def clear_active_campaign() -> None:
+    """Remove the active campaign selection if present."""
+    ACTIVE_CAMPAIGN.unlink(missing_ok=True)
+
+
+def ensure_campaign_state() -> tuple:
+    """Return (campaign, scene) for the current session.
+
+    If a generated campaign is active and valid, returns its campaign data plus
+    the current scene (reloaded from the pack if the scene file is missing).
+    Otherwise returns the example campaign template and the default scene.
+    """
+    active = load_active_campaign()
+    if active and isinstance(active.get("campaign"), dict):
+        campaign = active["campaign"]
+        scene = load_current_scene()
+        if scene is None:
+            pack = load_campaign_pack(active.get("slug", ""))
+            scene = pack.get("scene") if pack else None
+            if scene is not None:
+                save_current_scene(scene)
+        if scene is None:
+            scene = ensure_current_scene()
+        return campaign, scene
+
+    return load_campaign(), ensure_current_scene()
+
+
 def load_installed_rules() -> Optional[Dict[str, Any]]:
     """Return the installed-rules metadata, or None if absent/unreadable."""
     if not INSTALLED_RULES.exists():
@@ -172,6 +280,11 @@ def _write_log(blocks: str) -> None:
         if is_new:
             handle.write("# Current Session Log\n\n")
         handle.write(blocks)
+
+
+def append_note(text: str) -> None:
+    """Append a short italicised note (e.g. a campaign switch) to the log."""
+    _write_log(f"_{text.strip()}_\n\n---\n\n")
 
 
 def append_structured_turn(

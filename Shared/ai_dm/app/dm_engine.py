@@ -220,18 +220,31 @@ def build_context_block(
     character: Dict[str, Any],
     recent_log: str = "",
 ) -> str:
-    """Build the visible campaign/character context block."""
+    """Build the visible campaign/character context block.
+
+    Handles both the example campaign (player_visible_summary/current_location)
+    and generated campaign packs (summary/central_mystery/themes/safety_notes).
+    """
+    # Prefer a generated pack's "summary"; fall back to the example field.
+    summary = campaign.get("summary") or campaign.get("player_visible_summary") or "(none)"
+
     lines = [
         "# Campaign Context",
         f"Title: {campaign.get('campaign_title', 'Untitled')}",
         f"Tone: {campaign.get('tone', 'unspecified')}",
         f"Current location: {campaign.get('current_location', 'unknown')}",
         "",
-        "Player-visible summary:",
-        campaign.get("player_visible_summary", "(none)"),
-        "",
-        "Open threads:",
-        _format_list(campaign.get("open_threads")),
+        "Summary:",
+        summary,
+    ]
+    if campaign.get("central_mystery"):
+        lines += ["", "Central mystery:", str(campaign.get("central_mystery"))]
+    lines += ["", "Open threads:", _format_list(campaign.get("open_threads"))]
+    if campaign.get("themes"):
+        lines += ["", "Themes:", _format_list(campaign.get("themes"))]
+    if campaign.get("safety_notes"):
+        lines += ["", "Safety notes:", _format_list(campaign.get("safety_notes"))]
+    lines += [
         "",
         "# Player Character",
         f"Name: {character.get('name', 'Unknown')}",

@@ -10,6 +10,11 @@ action, send it to the local Ollama model with campaign context, print the
 DM reply, and append the exchange to the local session log.
 
 Commands:
+    /campaigns        list generated campaign packs
+    /load-campaign <slug>   load a generated campaign as active
+    /active-campaign  show the active campaign and current scene
+    /reset-campaign   reset to the example campaign and default scene
+    /new-campaign <seed>   generate a local campaign pack from a seed
     /roll <formula>   roll dice; resolves a pending check if one is active
     /rollcheck        roll the active character's modifier for the pending check
     /character        show the active character sheet
@@ -34,7 +39,6 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import namedtuple
 from pathlib import Path
 
 # Allow running as a plain script (python3 .../run_dm.py) by ensuring the
@@ -50,8 +54,14 @@ import ollama_client
 import rules_lookup
 import state_store
 
-# Everything a DM turn needs: resolved model plus loaded game context.
-Ctx = namedtuple("Ctx", ["model", "system_prompt", "campaign", "character"])
+# Everything a DM turn needs: resolved model plus loaded game context. Mutable
+# so campaign commands (e.g. /load-campaign) can swap the active campaign live.
+class Ctx:
+    def __init__(self, model, system_prompt, campaign, character):
+        self.model = model
+        self.system_prompt = system_prompt
+        self.campaign = campaign
+        self.character = character
 
 
 def _print_welcome(campaign, character, model, scene) -> None:
@@ -68,12 +78,10 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print(f"Using model: {model}")
     print(f"Ollama endpoint: {ollama_client.OLLAMA_HOST}")
     print("-" * 60)
+    print("  Type an action to play, or /help for the full command list.")
     print(
-        "  Type an action to play. Commands: /roll <formula>  /rollcheck  "
-        "/character  /mod <ability> [skill]  /rule <query>  "
-        "/rules-context <action>  /askrule <question>  /rules-status  "
-        "/new-campaign <seed>  /check  /scene  /scene-debug  /reset-scene  "
-        "/detect <action>  /narrate <action>  /debug-last  /recap  /quit"
+        "  Campaigns: /campaigns  /load-campaign <slug>  /active-campaign  "
+        "/reset-campaign  /new-campaign <seed>"
     )
     print("=" * 60)
     print()
@@ -213,6 +221,111 @@ def _handle_rule(query: str) -> None:
         return
     results = rules_lookup.search_rules(query, limit=3)
     print(f"\n{rules_lookup.format_rule_results(results)}\n")
+
+
+def _handle_campaigns() -> None:
+    """List generated campaign packs under campaigns/."""
+    packs = state_store.list_campaign_packs()
+    if not packs:
+        print("No generated campaigns found.")
+        print("Use /new-campaign <seed> or run generate_campaign.py.\n")
+        return
+    print("\nAvailable campaigns:\n")
+    for pack in packs:
+        print(f"- {pack['slug']}")
+        print(f"  Title: {pack['title']}")
+        print(f"  Tone: {pack['tone']}")
+        print(f"  Starting level: {pack['starting_level']}")
+    print()
+
+
+def _handle_load_campaign(slug: str, ctx: Ctx) -> None:
+    """Load a generated campaign pack as the active campaign (no model call)."""
+    slug = slug.strip()
+    if not slug:
+        print("Usage: /load-campaign <slug>   (see /campaigns)\n")
+        return
+
+    pack = state_store.load_campaign_pack(slug)
+    if pack is None:
+        print(f"Campaign not found: {slug}")
+        print("Use /campaigns to list available campaigns.\n")
+        return
+
+    campaign = pack["campaign"]
+    scene = pack["scene"]
+    if not isinstance(scene, dict):
+        print(f"Campaign '{slug}' has no readable starting scene; not loaded.\n")
+        return
+
+    state_store.save_active_campaign({"slug": slug, "campaign": campaign})
+    state_store.save_current_scene(scene)
+    state_store.clear_pending_check()
+    title = campaign.get("campaign_title", slug)
+    scene_title = scene.get("scene_title", "Untitled scene")
+    state_store.append_note(f"Campaign switched to: {title} — scene: {scene_title}")
+
+    # Update the in-memory campaign used by the current runner loop.
+    ctx.campaign = campaign
+
+    print(f"\nLoaded campaign: {title}")
+    print(f"Current scene: {scene_title}\n")
+
+
+def _handle_active_campaign(ctx: Ctx) -> None:
+    """Show the active campaign and current scene (no model call)."""
+    active = state_store.load_active_campaign()
+    scene = state_store.load_current_scene() or {}
+    scene_title = scene.get("scene_title", "(none)")
+    print("\nActive campaign:")
+    if active and isinstance(active.get("campaign"), dict):
+        print(active["campaign"].get("campaign_title", active.get("slug", "?")))
+        print(f"Slug: {active.get('slug', '?')}")
+    else:
+        print(ctx.campaign.get("campaign_title", "Example Campaign"))
+    print(f"Current scene: {scene_title}\n")
+
+
+def _handle_reset_campaign(ctx: Ctx) -> None:
+    """Reset to the example campaign and the default scene (no model call)."""
+    state_store.clear_active_campaign()
+    scene = state_store.load_scene_template(state_store.DEFAULT_SCENE_TEMPLATE)
+    state_store.save_current_scene(scene)
+    state_store.clear_pending_check()
+    ctx.campaign = state_store.load_campaign()
+    scene_title = scene.get("scene_title", "Untitled scene")
+    state_store.append_note("Campaign reset to the example campaign.")
+    print("\nReset to example campaign.")
+    print(f"Current scene: {scene_title}\n")
+
+
+def _handle_help() -> None:
+    """Print the available commands."""
+    print(
+        "\nCommands:\n"
+        "  /campaigns                 list generated campaigns\n"
+        "  /load-campaign <slug>      load a generated campaign\n"
+        "  /active-campaign           show the active campaign and scene\n"
+        "  /reset-campaign            reset to the example campaign\n"
+        "  /new-campaign <seed>       generate a new campaign pack\n"
+        "  /rule <query>              look up local rules\n"
+        "  /rules-context <text>      preview rules context for text\n"
+        "  /askrule <question>        answer a rules question\n"
+        "  /rules-status              show rules library status\n"
+        "  /character                 show the character sheet\n"
+        "  /mod <ability> [skill]     show a modifier\n"
+        "  /check                     show the pending check\n"
+        "  /roll <formula>            roll dice / resolve a pending check\n"
+        "  /rollcheck                 roll the pending check for the character\n"
+        "  /scene                     show the current scene\n"
+        "  /scene-debug               show the full scene JSON\n"
+        "  /reset-scene               reload the default scene\n"
+        "  /detect <action>           preview the scene check for an action\n"
+        "  /narrate <action>          narrate without scene detection\n"
+        "  /debug-last                show last DM/rules debug data\n"
+        "  /recap                     print the session log\n"
+        "  /quit                      exit\n"
+    )
 
 
 def _handle_new_campaign(seed: str, ctx: Ctx) -> None:
@@ -783,10 +896,9 @@ def _handle_dm_response(
 
 def main() -> int:
     try:
-        campaign = state_store.load_campaign()
         character = state_store.load_character()
         system_prompt = state_store.load_dm_system_prompt()
-        scene = state_store.ensure_current_scene()
+        campaign, scene = state_store.ensure_campaign_state()
         model = ollama_client.get_model()
     except FileNotFoundError as exc:
         print(f"Startup error: {exc}", file=sys.stderr)
@@ -818,6 +930,31 @@ def main() -> int:
             print("Goodbye.")
             return 0
 
+        if player_input == "/help":
+            _handle_help()
+            continue
+
+        # --- Campaign commands (handled before any narration/model call) ---
+        if player_input == "/campaigns":
+            _handle_campaigns()
+            continue
+
+        if player_input == "/load-campaign" or player_input.startswith("/load-campaign "):
+            _handle_load_campaign(player_input[len("/load-campaign"):], ctx)
+            continue
+
+        if player_input == "/active-campaign":
+            _handle_active_campaign(ctx)
+            continue
+
+        if player_input == "/reset-campaign":
+            _handle_reset_campaign(ctx)
+            continue
+
+        if player_input == "/new-campaign" or player_input.startswith("/new-campaign "):
+            _handle_new_campaign(player_input[len("/new-campaign"):], ctx)
+            continue
+
         if player_input == "/roll" or player_input.startswith("/roll "):
             _handle_roll(player_input[len("/roll"):], ctx)
             continue
@@ -844,10 +981,6 @@ def main() -> int:
 
         if player_input == "/rules-status":
             _handle_rules_status()
-            continue
-
-        if player_input == "/new-campaign" or player_input.startswith("/new-campaign "):
-            _handle_new_campaign(player_input[len("/new-campaign"):], ctx)
             continue
 
         if player_input == "/check":
@@ -898,6 +1031,12 @@ def main() -> int:
                 print("\n-------------------------\n")
             else:
                 print("(No session log yet.)\n")
+            continue
+
+        # Any other slash input is an unknown command — never sent to the model.
+        if player_input.startswith("/"):
+            print(f"Unknown command: {player_input.split()[0]}")
+            print("Type /help for commands.\n")
             continue
 
         _handle_player_action(player_input, ctx)
