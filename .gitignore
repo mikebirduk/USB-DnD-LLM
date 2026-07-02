@@ -83,6 +83,7 @@ Shared/ai_dm/rules/srd/*/extracted/*
 Shared/ai_dm/rules/srd/*/markdown/*
 Shared/ai_dm/rules/srd/*/chunks/*
 Shared/ai_dm/rules/srd/*/lookup/*
+Shared/ai_dm/rules/srd/*/lookup/rules_glossary.json
 Shared/ai_dm/rules/installed-rules.json
 
 # Keep SRD folder placeholders

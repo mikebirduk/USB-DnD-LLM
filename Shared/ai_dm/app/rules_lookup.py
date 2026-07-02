@@ -92,7 +92,15 @@ def _tokens(text: str) -> List[str]:
 
 def load_rules_lookup() -> List[Dict[str, Any]]:
     """Return the list of indexed rule docs, or [] if the index is missing."""
-    path = state_store.RULES_LOOKUP_INDEX
+    return _load_json_list(state_store.RULES_LOOKUP_INDEX)
+
+
+def load_rules_glossary() -> List[Dict[str, Any]]:
+    """Return the canonical glossary entries, or [] if none are built."""
+    return _load_json_list(state_store.RULES_GLOSSARY_INDEX)
+
+
+def _load_json_list(path) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     try:
@@ -102,17 +110,63 @@ def load_rules_lookup() -> List[Dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
-def _score(query_tokens: List[str], doc: Dict[str, Any]) -> int:
-    """Score a doc: keyword matches weighted higher than body-text matches."""
+# Multi-word rule phrases; an exact phrase match scores much higher than loose
+# single-token overlap, so rule-relevant chunks beat incidental keyword hits.
+RULE_PHRASES = (
+    "ability check", "saving throw", "attack roll", "difficulty class",
+    "short rest", "long rest", "hit dice", "death saving throw",
+    "zero hit points", "bonus action", "opportunity attack",
+    "grapple", "grappled", "prone", "restrained", "stunned", "frightened",
+    "charmed", "incapacitated", "unconscious", "advantage", "disadvantage",
+    "proficiency", "initiative", "spellcasting", "athletics", "perception",
+    "investigation", "stealth",
+)
+
+
+def _looks_like_toc(text: str) -> bool:
+    """True if text is dominated by table-of-contents dotted-leader lines."""
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return False
+    leader_lines = sum(1 for line in lines if re.search(r"\.{5,}", line))
+    return leader_lines / len(lines) > 0.25
+
+
+# Cues that a chunk is a feat/item/ancestry body rather than a rule definition.
+_INCIDENTAL_CUES = (
+    "prerequisite", "this feat", "martial weapon", "this weapon", "ancestry",
+    "lineage", "powerful build", "you gain the following",
+)
+
+
+def _score(query: str, query_tokens: List[str], doc: Dict[str, Any]) -> int:
+    """Score a chunk doc: phrase + position matter more than loose overlap."""
     if not query_tokens:
         return 0
+    lowered_query = query.lower()
+    text = str(doc.get("text", ""))
+    lowered_text = text.lower()
     keyword_tokens = set()
+    keyword_blob = " ".join(str(k) for k in doc.get("keywords", [])).lower()
     for keyword in doc.get("keywords", []):
         keyword_tokens.update(_tokens(str(keyword)))
-    text_tokens = set(_tokens(doc.get("text", "")))
+    text_tokens = set(_tokens(text))
     title_tokens = set(_tokens(doc.get("title", "")))
 
     score = 0
+    for phrase in RULE_PHRASES:
+        if phrase in lowered_query and (
+            phrase in lowered_text or phrase in keyword_blob
+        ):
+            score += 6
+            pos = lowered_text.find(phrase)
+            if 0 <= pos < 200:
+                score += 4  # definition-like: term near the start
+            elif pos > 500:
+                score -= 2  # likely an incidental mention deep in the body
+            if lowered_text.count(phrase) == 1 and pos > 500:
+                score -= 2  # mentioned once, late — probably incidental
+
     for token in query_tokens:
         if token in keyword_tokens:
             score += 3
@@ -120,19 +174,95 @@ def _score(query_tokens: List[str], doc: Dict[str, Any]) -> int:
             score += 2
         elif token in text_tokens:
             score += 1
+
+    # Demote feat/item/ancestry bodies and TOC-only snippets.
+    if any(cue in lowered_text for cue in _INCIDENTAL_CUES):
+        score -= 5
+    if _looks_like_toc(text):
+        score -= 8
+
     return score
 
 
-def search_rules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
-    """Return up to ``limit`` rule docs best matching the query, by overlap."""
-    docs = load_rules_lookup()
-    if not docs:
+def _glossary_doc(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape a glossary entry as a result doc for formatting/display."""
+    source = entry.get("source", "SRD 5.2.1 glossary")
+    return {
+        "id": entry.get("id"),
+        "title": entry.get("title", entry.get("term", "Rule")),
+        "path": source,
+        "source": source,
+        "license": entry.get("license", "CC-BY-4.0"),
+        "text": entry.get("text", ""),
+        "keywords": [entry.get("term", "")] + list(entry.get("aliases", [])),
+        "glossary": True,
+    }
+
+
+def _glossary_matches(query: str, query_tokens: List[str]) -> List[Dict[str, Any]]:
+    """Return glossary entries matching the query, best (most specific) first."""
+    entries = load_rules_glossary()
+    if not entries:
         return []
+    lowered_query = query.lower()
+    token_set = set(query_tokens)
+
+    scored = []
+    for entry in entries:
+        term = str(entry.get("term", "")).lower()
+        aliases = [str(a).lower() for a in entry.get("aliases", [])]
+        title = str(entry.get("title", "")).lower()
+        score = 0
+        if term and (term in lowered_query or term in token_set):
+            score = max(score, 1000)
+        for alias in aliases:
+            if alias and (alias in lowered_query or alias in token_set):
+                score = max(score, 900)
+        if title and title in lowered_query:
+            score = max(score, 500)
+        if score > 0:
+            scored.append((entry, score, len(term)))
+
+    # Highest score first; break ties toward the more specific (longer) term.
+    scored.sort(key=lambda item: (item[1], item[2]), reverse=True)
+    return [_glossary_doc(entry) for entry, _score_val, _len in scored]
+
+
+def search_rules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
+    """Return up to ``limit`` results, canonical glossary entries first.
+
+    Order: (1) canonical glossary term/alias matches, then (2) chunk lookup by
+    phrase/position scoring. TOC snippets are filtered from chunk results.
+    """
     query_tokens = _tokens(query)
-    scored = [(doc, _score(query_tokens, doc)) for doc in docs]
-    matches = [doc for doc, score in scored if score > 0]
-    matches.sort(key=lambda doc: _score(query_tokens, doc), reverse=True)
-    return matches[:limit]
+    results: List[Dict[str, Any]] = []
+    seen_ids = set()
+
+    for doc in _glossary_matches(query, query_tokens):
+        if doc.get("id") in seen_ids:
+            continue
+        results.append(doc)
+        seen_ids.add(doc.get("id"))
+        if len(results) >= limit:
+            return results
+
+    docs = load_rules_lookup()
+    if docs:
+        scored = [(doc, _score(query, query_tokens, doc)) for doc in docs]
+        matches = [
+            doc for doc, score in scored
+            if score > 0 and not _looks_like_toc(doc.get("text", ""))
+        ]
+        matches.sort(key=lambda doc: _score(query, query_tokens, doc), reverse=True)
+        for doc in matches:
+            if doc.get("id") in seen_ids:
+                continue
+            results.append(doc)
+            seen_ids.add(doc.get("id"))
+            if len(results) >= limit:
+                break
+
+    return results[:limit]
 
 
 def format_rule_results(results: List[Dict[str, Any]]) -> str:

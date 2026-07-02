@@ -54,6 +54,44 @@ python3 Shared/ai_dm/rules/scripts/install_rules.py --official --no-network
 With no flags, the installer imports from the official PDF if it is already
 present, otherwise it falls back to the starter summaries.
 
+## How official SRD extraction works
+
+Official SRD extraction creates:
+
+- raw page text (`extracted/pages.jsonl`, `extracted/srd_5_2_1_full.txt`)
+- cleaned chunk JSONL (`chunks/rules_chunks.jsonl`)
+- lookup index (`lookup/rules_lookup.json`)
+
+Extraction cleans the text (removing table-of-contents dotted-leader lines,
+isolated page numbers, and footer boilerplate), skips TOC-dominated pages, and
+splits the rest into overlapping ~1200-character chunks with rule-term
+keywords. `build_rules_lookup.py` prefers these chunks over the rough Markdown
+sections, so lookup returns real rule prose instead of table-of-contents
+listings. The first extraction is heuristic and may need refinement, but lookup
+should prefer real rule text over table-of-contents text.
+
+### Canonical rules glossary
+
+`build_rules_lookup.py` also builds a **canonical rules glossary**
+(`lookup/rules_glossary.json`, via `build_rules_glossary.py`) with one
+authoritative entry per common term — conditions (Grappled, Restrained, Prone,
+…), rests, death/dying, and core roll mechanics. Each entry's definition is
+extracted from the SRD glossary (`Term [Condition]` headings) when found, or a
+short starter fallback summary otherwise. The lookup consults the glossary
+**first**, so `/rule grappled` returns the *Grappled condition definition*
+rather than incidental mentions in feats, items, or ancestry traits; general
+chunks may still appear as later results.
+
+Test the index directly:
+
+```bash
+python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py --test-query "grapple"
+```
+
+Useful test queries: `grapple`, `grappled`, `restrained`, `short rest`,
+`zero hit points`, `death saving throw`, `attack roll`, `advantage`,
+`investigation`, `perception`.
+
 ## Notes on local/private data and licensing
 
 - The downloaded SRD PDF and all extracted/generated text are **local runtime

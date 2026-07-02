@@ -211,6 +211,18 @@ python3 Shared/ai_dm/rules/scripts/install_rules.py --official --no-network
 The downloaded SRD PDF and all extracted/generated text are local runtime
 files, ignored by Git. Do not add non-SRD D&D books or proprietary material.
 
+Official extraction cleans out table-of-contents lines and splits the SRD into
+overlapping text chunks, and the lookup prefers those chunks — so `/rule` and
+`/rules-context` return real rule prose, not table-of-contents listings. The
+lookup also builds a **canonical rules glossary** and consults it first for
+common terms (conditions, rests, death saves, core roll mechanics), so
+`/rule grappled` returns the definition rather than incidental mentions in
+feats, items, or ancestry traits. You can test the index directly:
+
+```bash
+python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py --test-query "grapple"
+```
+
 Inside the runner:
 
 ```text

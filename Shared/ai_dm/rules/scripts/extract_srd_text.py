@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 RULES_DIR = Path(__file__).resolve().parent.parent
@@ -49,6 +50,104 @@ SECTION_SPECS = [
 ]
 
 _BLOCK_CHARS = 4000
+
+# Rule terms boosted into chunk keywords (mirrored in build_rules_lookup.py).
+BOOSTED_RULE_TERMS = [
+    "ability check", "saving throw", "attack roll", "advantage", "disadvantage",
+    "proficiency", "dc", "difficulty class",
+    "grapple", "grappled", "prone", "restrained", "stunned", "frightened",
+    "charmed", "incapacitated", "unconscious",
+    "short rest", "long rest", "hit dice", "death saving throw",
+    "zero hit points", "initiative", "attack", "action", "bonus action",
+    "reaction", "movement", "spellcasting",
+]
+
+# Chunking parameters.
+_CHUNK_SIZE = 1200
+_CHUNK_OVERLAP = 200
+_CHUNK_MIN = 200
+
+
+def clean_srd_text(text: str) -> str:
+    """Remove TOC dotted leaders, isolated page numbers, and excess whitespace."""
+    cleaned_lines = []
+    for raw in (text or "").split("\n"):
+        line = raw.strip()
+        if not line:
+            cleaned_lines.append("")
+            continue
+        # Table-of-contents dotted leader (e.g. "Ability Checks ...... 6").
+        if re.search(r"\.{5,}", line):
+            continue
+        # Line that is mostly dots.
+        if line.count(".") / max(len(line), 1) > 0.4:
+            continue
+        # Isolated page number.
+        if re.fullmatch(r"\d{1,4}", line):
+            continue
+        # Common footer/boilerplate.
+        if "©" in line or re.match(r"(?i)^system reference document", line):
+            continue
+        cleaned_lines.append(line)
+
+    result = "\n".join(cleaned_lines)
+    result = re.sub(r"[ \t]{2,}", " ", result)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
+
+
+def is_toc_page(text: str) -> bool:
+    """True if >25% of non-empty lines are TOC-style dotted-leader lines."""
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return False
+    leaders = sum(1 for line in lines if re.search(r"\.{5,}", line))
+    return leaders / len(lines) > 0.25
+
+
+def _chunk_text(text: str):
+    """Yield overlapping ~1200-char chunks; drop tiny ones lacking rule terms."""
+    text = text.strip()
+    if not text:
+        return
+    length = len(text)
+    start = 0
+    step = max(_CHUNK_SIZE - _CHUNK_OVERLAP, 1)
+    while start < length:
+        chunk = text[start: start + _CHUNK_SIZE].strip()
+        if len(chunk) >= _CHUNK_MIN or _has_rule_term(chunk):
+            yield chunk
+        if start + _CHUNK_SIZE >= length:
+            break
+        start += step
+
+
+def _has_rule_term(text: str) -> bool:
+    lowered = text.lower()
+    return any(term in lowered for term in BOOSTED_RULE_TERMS)
+
+
+def chunk_keywords(text: str):
+    """Keywords for a chunk: boosted rule terms present + frequent long words."""
+    lowered = text.lower()
+    keywords = [term for term in BOOSTED_RULE_TERMS if term in lowered]
+    counts = Counter(
+        w for w in re.findall(r"[a-z][a-z']+", lowered)
+        if len(w) > 3 and w not in _STOP_WORDS
+    )
+    for word, _count in counts.most_common(15):
+        if word not in keywords:
+            keywords.append(word)
+    return keywords
+
+
+_STOP_WORDS = {
+    "the", "and", "for", "with", "you", "your", "are", "may", "can", "when",
+    "each", "one", "any", "such", "that", "this", "from", "into", "out",
+    "its", "their", "them", "they", "not", "but", "all", "some", "than",
+    "then", "must", "make", "have", "has", "while", "also", "which", "these",
+    "there", "other", "more", "only", "who", "whom", "does",
+}
 
 
 def _load_manifest() -> dict:
@@ -110,10 +209,14 @@ def main() -> int:
     version = manifest.get("version", "5.2.1")
     pdf_filename = manifest.get("pdf_filename", "SRD_CC_v5.2.1.pdf")
 
+    source_name = manifest.get("source_name", "Dungeons & Dragons SRD 5.2.1")
+    license_name = manifest.get("license", "CC-BY-4.0")
+
     srd_dir = RULES_DIR / "srd" / version
     pdf_path = srd_dir / "source" / pdf_filename
     extracted_dir = srd_dir / "extracted"
     markdown_dir = srd_dir / "markdown"
+    chunks_dir = srd_dir / "chunks"
 
     if not pdf_path.exists():
         print(f"SRD PDF not found at {pdf_path}", file=sys.stderr)
@@ -125,6 +228,7 @@ def main() -> int:
 
     extracted_dir.mkdir(parents=True, exist_ok=True)
     markdown_dir.mkdir(parents=True, exist_ok=True)
+    chunks_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         reader = pypdf.PdfReader(str(pdf_path))
@@ -147,16 +251,57 @@ def main() -> int:
                 json.dumps({"page": number, "text": text}, ensure_ascii=False) + "\n"
             )
 
+    # Raw full text (unmodified) for reference.
     full_text = "\n".join(page_texts)
     full_path.write_text(full_text, encoding="utf-8")
 
-    sections = _split_sections(full_text, markdown_dir)
+    # Cleaned text drives markdown sections and chunks (no TOC leaders).
+    cleaned_full = clean_srd_text(full_text)
+    sections = _split_sections(cleaned_full, markdown_dir)
+
+    chunks_path = chunks_dir / "rules_chunks.jsonl"
+    n_chunks, skipped_toc = _write_chunks(
+        page_texts, chunks_path, source_name, license_name
+    )
 
     print(f"Extracted {len(page_texts)} pages -> extracted/srd_5_2_1_full.txt")
-    print(f"Wrote per-page JSONL -> extracted/pages.jsonl")
+    print("Wrote per-page JSONL -> extracted/pages.jsonl")
     print(f"Wrote {sections} Markdown sections -> markdown/")
+    print(
+        f"Wrote {n_chunks} cleaned chunks -> chunks/rules_chunks.jsonl "
+        f"({skipped_toc} TOC pages skipped)"
+    )
     print("Next: python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py")
     return 0
+
+
+def _write_chunks(page_texts, chunks_path: Path, source_name: str, license_name: str):
+    """Write cleaned, non-TOC page text as overlapping chunks. Returns counts."""
+    n_chunks = 0
+    skipped_toc = 0
+    with chunks_path.open("w", encoding="utf-8") as chunks_file:
+        for page_number, raw in enumerate(page_texts, start=1):
+            if not raw.strip():
+                continue
+            if is_toc_page(raw):
+                skipped_toc += 1
+                continue
+            cleaned = clean_srd_text(raw)
+            if not cleaned:
+                continue
+            for chunk_index, chunk in enumerate(_chunk_text(cleaned), start=1):
+                entry = {
+                    "id": f"srd_5_2_1_page_{page_number}_chunk_{chunk_index}",
+                    "title": f"SRD 5.2.1 page {page_number}",
+                    "page": page_number,
+                    "source": source_name,
+                    "license": license_name,
+                    "text": chunk,
+                    "keywords": chunk_keywords(chunk),
+                }
+                chunks_file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                n_chunks += 1
+    return n_chunks, skipped_toc
 
 
 if __name__ == "__main__":
