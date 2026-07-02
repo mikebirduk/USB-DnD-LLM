@@ -1,145 +1,177 @@
-# USB-Uncensored-LLM ⚡
+# USB-DnD-LLM 🎲
 
-**USB-Uncensored-LLM** is a fully air-gapped, zero-dependency, plug-and-play Local AI environment designed to run seamlessly from your **local hard drive** or a **portable USB/SSD**. It bypasses complex installations natively executing large language models directly on your hardware with no internet required.
+**USB-DnD-LLM** is a fully offline, zero-dependency, plug-and-play local AI environment for playing Dungeons & Dragons with a private AI Dungeon Master. It runs entirely from your **local hard drive** or a **portable USB/SSD** — the language model, the game engine, and your campaign data all stay on the drive, with no internet required after setup and no cloud APIs ever.
 
-With a unified architecture, you can initialize your AI models once and choose to keep them on your system or carry them with you across Windows, macOS, and Linux PCs.
-
-🎥 **Watch the Setup & Demo Video:** [https://youtu.be/60PSXsoXc8A](https://youtu.be/60PSXsoXc8A)
-
-[![USB-Uncensored-LLM Setup & Demo](https://img.youtube.com/vi/60PSXsoXc8A/maxresdefault.jpg)](https://youtu.be/60PSXsoXc8A)
+Initialize your models once and either keep them on your machine or carry the whole setup with you across Windows, macOS, and Linux.
 
 ## 🚀 Core Features
-* **Zero Dependency Setup:** Ships with portable Python and isolated engine binaries. No system permissions, registry edits, or package managers required.
-* **Cross-Platform Interoperability:** Uses a intelligent `Shared` volume system — download your 5GB+ AI models *once*, and use them natively on Windows, macOS, and Linux without duplication.
-* **Censorship Free:** Integrates cutting-edge ablative and heretic fine-tuned models for completely unfiltered interactions.
-* **Network Proxied UI:** The custom Python HTTP server instantly serves a blazing-fast dark mode UI. You can access the AI from your phone or tablet on the same WiFi network without complex CORS configuration.
-* **Hardware Accelerated:** Uses a custom-compiled Ollama engine under the hood, natively capitalizing on AVX CPU instructions, NVIDIA CUDA, or Apple Metal GPU accelerators dynamically when plugged into different host machines.
+
+* **Private AI Dungeon Master:** A local, structured DM that narrates scenes, tracks campaign state, requests ability checks, rolls dice, resolves outcomes, and answers rules questions — all from a terminal. See [`Shared/ai_dm/README.md`](Shared/ai_dm/README.md).
+* **Local D&D SRD rules:** Optionally import the official CC-BY-4.0 SRD 5.2.1 (or use built-in starter summaries) for local `/rule` and `/rules-context` lookups. No cloud search.
+* **Zero-dependency setup:** Ships with a portable Python and isolated engine binaries. No system permissions, registry edits, or package managers required.
+* **Cross-platform:** A shared `Shared/` volume lets you download your models *once* and use them natively on Windows, macOS, and Linux without duplication.
+* **Everything stays local:** Runs against a local Ollama engine on `127.0.0.1` — no telemetry, no analytics, no external calls. Campaigns, saves, logs, and downloaded models live only on your drive.
+* **Optional chat UI:** A lightweight Python HTTP server also serves a dark-mode chat UI you can reach from a phone or tablet on the same WiFi.
+* **Hardware accelerated:** Uses a portable Ollama engine that takes advantage of AVX CPU instructions, NVIDIA CUDA, or Apple Metal dynamically on whatever host it's plugged into.
 
 ---
 
 ## 💻 System Requirements
-Before preparing your drive, ensure you have:
-- **Storage:** A USB 3.0+ flash drive or SSD with an absolute minimum of **8 GB** free space (16 GB is **highly** recommended).
-- **RAM:** The host computer should have at least **8 GB of system memory** to run the 2B/4B models, and **16 GB of memory** to fluidly run the 9B/12B models.
+
+- **Storage:** A USB 3.0+ flash drive or SSD with at least **8 GB** free (16 GB+ recommended once you add models and campaigns).
+- **RAM:** At least **8 GB** of system memory for small 2B–4B models; **16 GB+** for 8B–12B models.
+- **Python 3:** Required for the AI Dungeon Master (`run_dm.py`) and the rules scripts. The chat UI ships its own portable Python.
 
 ---
 
 ## 📂 Folder Architecture
 
-The project is structured to strictly isolate operating system executables while securely unifying heavy model weights to save precious portable storage capacity.
+The project isolates per-OS executables while unifying heavy model weights and shared data to save portable storage.
 
 ```text
-[Portable USB Drive]
+[Portable USB Drive / Local Folder]
  ├── 📁 Android    # Native Android (Termux) installers & launchers
- ├── 📁 Linux      # Native Ubuntu/Debian offline installers & launchers
- ├── 📁 Mac        # Native macOS offline installers & launchers
- ├── 📁 Windows    # Native Windows offline automatic UI menus
- └── 📁 Shared     # Unified Data System
-      ├── 📁 bin         (Holds isolated executables: ollama-windows.exe, ollama-darwin...)
-      ├── 📁 chat_data   (Houses cross-platform persistent conversation history)
-      ├── 📁 models      (HuggingFace GGUF Weights & local database mapping)
-      └── 📁 python      (Isolated portable python environment)
+ ├── 📁 Linux      # Native Ubuntu/Debian installers & launchers
+ ├── 📁 Mac        # Native macOS installers & launchers
+ ├── 📁 Windows    # Native Windows installers & launchers
+ └── 📁 Shared     # Unified data system
+      ├── 📁 bin         (Isolated engine executables: ollama-darwin, ollama-windows.exe ...)
+      ├── 📁 models      (Downloaded GGUF weights + installed-models.txt)
+      ├── 📁 chat_data   (Persistent chat-UI conversation history)
+      ├── 📁 python      (Isolated portable Python environment)
+      └── 📁 ai_dm       (The AI Dungeon Master: app, prompts, rules, campaigns, saves)
 ```
 
----
-
-## 🧠 Curated AI Model Library
-
-This USB ships with a curated installer for the highest-quality, locally operable uncensored models available on the open-source market today:
-
-1. **Gemma 2 2B Abliterated (~1.6 GB)**: *Recommended for all.* Extremely fast, incredibly smart for its size, with safety alignment vectors mathematically purged.
-2. **Gemma 4 E4B Ultra Uncensored Heretic (~5.34 GB)**: A "heretic" fine-tune that aggressively forces compliance to all user queries regardless of content or legality.
-3. **Qwen 3.5 9B Uncensored Aggressive (~5.2 GB)**: A much larger, incredibly competent reasoning model with a strict adherence to raw, unbiased answers.
-4. **Custom Models**: The installer supports downloading *any* .gguf weight directly from HuggingFace natively into the USB's engine.
+Downloaded models, generated campaigns, saves, logs, and imported rules are **local runtime data** and are never committed to Git.
 
 ---
 
-## ⚙️ Quick Start Guide
+## ⚙️ Quick Start
 
-### Step 1: Initialize the Engine
-Depending on the computer you are currently plugged into, navigate into the respective Operating System folder and double-click/run the install script. 
-* **Windows:** Double-click `Windows/install.bat`
-* **macOS:** Open Terminal, drag in `Mac/install.command`, and press Enter.
-* **Linux:** Run `bash Linux/install.sh`
-* **Android:** Open Termux, run `bash Android/install.sh` (see Android section below)
+### Step 1 — Initialize the engine and download a model
 
-> **Note:** Initializing simply downloads the tiny 50MB execution engine specific to that computer to the `Shared/bin` folder. 
+Open the folder for the OS you're plugged into and run its installer. This downloads the small Ollama engine for that OS into `Shared/bin`, then lets you pick and download one or more local models into `Shared/models`.
 
-### Step 2: Download AI Models 
-It is highly recommended to run the model download phase via a **Windows PC** (`Windows/install.bat`), which provides an interactive, terminal-based catalog to easily select and download highly curated, uncensored GGUF Models. 
-*(If you do not have a Windows PC, simply download your `.gguf` weights from HuggingFace and place them into the `Shared/models` folder manually).*
+* **Windows:** double-click `Windows/install.bat`
+* **macOS:** open Terminal, drag in `Mac/install.command`, press Enter
+* **Linux:** `bash Linux/install.sh`
+* **Android:** open Termux, `bash Android/install.sh` (see the Android section)
 
-### Step 3: Launch
-Open the respective OS folder and run the `start` script:
+The installer records your chosen models in `Shared/models/installed-models.txt`. For the AI Dungeon Master, a small, fast instruct model is a good default (e.g. **Phi-3.5 Mini** or **Qwen2.5**); larger models give richer narration if your RAM allows.
+
+### Step 2 — Start the engine
+
+Run the `start` script for your OS to launch the local engine (and the chat UI):
+
 * **Windows:** `Windows/start-fast-chat.bat`
 * **macOS:** `Mac/start.command`
 * **Linux:** `bash Linux/start.sh`
 * **Android:** `bash Android/start.sh` (in Termux)
 
-The engine will spin up securely in the background, and your default web browser will automatically open the locally-served Chat UI.
+The engine serves locally on `http://127.0.0.1:11434`. The chat UI opens automatically in your browser.
+
+### Step 3 — Play
+
+You can use USB-DnD-LLM two ways:
+
+**A) AI Dungeon Master (terminal)** — with the engine running:
+
+```bash
+python3 Shared/ai_dm/app/run_dm.py
+```
+
+The DM automatically uses the first model in `Shared/models/installed-models.txt`. To force a specific one:
+
+```bash
+export AI_DM_MODEL="phi35-mini-local"
+python3 Shared/ai_dm/app/run_dm.py
+```
+
+Type actions to play. Useful in-loop commands include `/roll 1d20+3`, `/rollcheck`, `/character`, `/scene`, `/rule <query>`, `/askrule <question>`, `/recap`, and `/quit`. Full details and the design are in [`Shared/ai_dm/README.md`](Shared/ai_dm/README.md).
+
+**B) Chat UI (browser)** — just use the page opened by the `start` script for free-form local chat.
+
+### Optional — Install the local rules library
+
+Give the DM local D&D rules to consult. Starter summaries (offline):
+
+```bash
+python3 Shared/ai_dm/rules/scripts/install_rules.py --starter
+python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py
+```
+
+Or import the official CC-BY-4.0 SRD 5.2.1 PDF:
+
+```bash
+python3 Shared/ai_dm/rules/scripts/download_srd.py
+python3 -m pip install pypdf
+python3 Shared/ai_dm/rules/scripts/extract_srd_text.py
+python3 Shared/ai_dm/rules/scripts/build_rules_lookup.py
+```
+
+Then, inside the runner, try `/rules-status` and `/rule grappled`. See [`Shared/ai_dm/rules/README.md`](Shared/ai_dm/rules/README.md).
+
+---
+
+## 🧠 Local Model Library
+
+The installer presents an interactive catalog of small, locally runnable GGUF models and downloads them into `Shared/models` — pick one during Step 1. For the AI Dungeon Master a compact instruct model keeps turns fast; a larger model produces richer prose if you have the RAM. You can also point the installer at **any** `.gguf` weight from Hugging Face, or drop a `.gguf` into `Shared/models` manually.
 
 ---
 
 ## 🏠 Local Disk Installation
-While this project is optimized for USB portability, it works beautifully as a lightweight local AI setup on your primary computer.
 
-**How to Install Locally:**
-1.  **Download/Clone** this repository to a folder on your `C:\` or `D:\` drive.
-2.  Navigate to the **Windows** (or Mac/Linux) folder.
-3.  Run **`install.bat`** and choose your desired models.
-4.  The system will download everything into that local folder. 
-5.  Run **`start-fast-chat.bat`** to begin.
+USB-DnD-LLM also works as a lightweight local AI setup on your primary computer.
 
-*Benefit:* Running from an internal SSD is significantly faster than a USB drive, resulting in near-instant AI model loading!
+1. **Download/clone** this repository into a folder on your internal drive.
+2. Open the **Windows** (or **Mac**/**Linux**) folder.
+3. Run the installer (`install.bat` / `install.command` / `install.sh`) and choose your model(s).
+4. Run the `start` script to launch the engine, then run `python3 Shared/ai_dm/app/run_dm.py` to play.
+
+Running from an internal SSD loads models significantly faster than a USB drive.
 
 ---
 
 ## 📱 Android Native (Termux)
-Run the AI engine **directly on your Android phone or tablet** — no PC required!
+
+Run the engine **directly on an Android phone or tablet** — no PC required.
 
 ### Requirements
-- **Termux** installed from [F-Droid](https://f-droid.org/en/packages/com.termux/) (NOT the Play Store — it's outdated)
-- **6 GB+ RAM** (8 GB+ recommended). Only the 2B model runs well on 6 GB devices.
-- **WiFi or mobile data** for initial setup (downloading engine + models)
-- **ARM64 processor** (virtually all modern Android phones/tablets)
+- **Termux** from [F-Droid](https://f-droid.org/en/packages/com.termux/) (not the outdated Play Store build)
+- **6 GB+ RAM** (8 GB+ recommended; only the smallest models run well on 6 GB)
+- **WiFi/mobile data** for the initial engine + model download
+- **ARM64** processor (virtually all modern devices)
 
-### Setup
-1. Copy the USB-Uncensored-LLM folder to your Android device (via USB OTG, file transfer, or `git clone`)
-2. Open **Termux** and navigate to the project folder
-3. Run: `bash Android/install.sh`
-4. Select your model (Gemma 2 2B recommended for most Android devices)
-5. Wait for downloads to complete — **keep Termux in the foreground!**
+### Setup & launch
+1. Copy the USB-DnD-LLM folder to your device (USB OTG, file transfer, or `git clone`).
+2. Open **Termux**, navigate to the project folder.
+3. `bash Android/install.sh` and choose a small model.
+4. `bash Android/start.sh` to launch.
 
-### Launch
-```bash
-bash Android/start.sh
-```
-The AI engine starts and Chrome opens automatically with the chat UI.
-
-### Android Performance Tips
-- **Run `termux-wake-lock`** before starting — prevents Android from killing the process
-- **Keep Termux in the foreground** for best performance
-- **Close other apps** to free RAM for the AI model
-- **Use the 2B model** on devices with less than 12 GB RAM
-- **Plug in your charger** — LLM inference drains battery fast
-- Expect **~3-10 tokens/sec** on the 2B model (vs 30-50+ on a PC with GPU)
+### Performance tips
+- Run `termux-wake-lock` before starting to stop Android killing the process.
+- Keep Termux in the foreground and close other apps to free RAM.
+- Use the smallest model on devices with under 12 GB RAM, and keep the charger plugged in.
 
 ---
 
-## 📱 LAN Mobile Access
-If you want to use the Heavyweight AI from your phone while lounging on the couch:
-1. Ensure your PC running the `start` script and your phone are on the exact same WiFi network.
-2. The terminal window will automatically detect your host machine and display a **Network Access** IP Address (e.g., `http://192.168.1.15:3333`).
-3. Simply type that URL into your mobile browser (Safari/Chrome). The custom Python server perfectly routes mobile queries directly to the USB! *(Note: If pages do not load, ensure Windows Firewall allows incoming connections on port `3333`)*.
+## 📶 LAN Mobile Access
+
+To use the chat UI from your phone on the same network:
+1. Ensure the host running the `start` script and your phone are on the same WiFi.
+2. The terminal prints a **Network Access** URL (e.g. `http://192.168.1.15:3333`).
+3. Open that URL in your mobile browser. *(If it doesn't load, allow incoming connections on port `3333` in your firewall.)*
 
 ---
 
 ## 🛠️ Troubleshooting
 
-- **The script instantly closes on Windows:** You likely have the legacy Windows App Execution Aliases turned on, which tricks the OS. Run the script via a command prompt, or right-click the `.bat` file and "Run as Administrator".
-- **"Ollama Engine Not Found":** You attempted to run the `start` script before the `install` script downloaded the base software for your specific OS. Run your OS's installer!
-- **Slow Generation Speeds:** Your model is too large for your host PC's RAM. Re-run `install.bat` and select the **Gemma 2 2B Abliterated** model, which runs rapidly even on older machines.
+- **"Ollama engine not found":** You ran a `start` script before running the OS installer. Run your OS's installer first.
+- **The script instantly closes on Windows:** Disable the Windows App Execution Aliases, or run the `.bat` from a command prompt (or "Run as Administrator").
+- **Slow generation:** The model is too large for your host's RAM. Re-run the installer and pick a smaller model.
+- **AI DM says "No AI model found":** Run the OS installer to download a model (it writes `Shared/models/installed-models.txt`), then start the engine before running `run_dm.py`.
+- **`/rule` returns nothing:** Install the rules library (see the optional step above), then run `build_rules_lookup.py`.
 
 ---
-> *Disclaimer: USB-Uncensored-LLM is built for uncompromising computational freedom. By utilizing ablative models, the system will not moralize, lecture, or refuse your prompts. Please use responsibly.*
-# USB-Uncensored-LLM
+
+> *Privacy: USB-DnD-LLM runs entirely on your own hardware against a local engine on `127.0.0.1`. No cloud APIs, telemetry, or analytics — your campaigns, saves, and chats never leave your drive. Do not add non-SRD D&D books or other proprietary material unless you have the right to use them.*

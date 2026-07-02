@@ -20,6 +20,10 @@ SCENES_TEMPLATE_DIR = AI_DM_ROOT / "templates" / "scenes"
 DEFAULT_SCENE_TEMPLATE = "old_well_scene"
 DM_SYSTEM_PROMPT = AI_DM_ROOT / "prompts" / "dm_system.md"
 RULES_LAWYER_PROMPT = AI_DM_ROOT / "prompts" / "rules_lawyer.md"
+CAMPAIGN_GENERATOR_PROMPT = AI_DM_ROOT / "prompts" / "campaign_generator.md"
+
+# Generated campaign packs live here (runtime/private, git-ignored).
+CAMPAIGNS_DIR = AI_DM_ROOT / "campaigns"
 
 SAVES_DIR = AI_DM_ROOT / "saves"
 SESSION_LOG = SAVES_DIR / "current_session.md"
@@ -32,6 +36,7 @@ RULES_DIR = AI_DM_ROOT / "rules"
 RULES_SRD_VERSION = "5.2.1"
 RULES_SRD_DIR = RULES_DIR / "srd" / RULES_SRD_VERSION
 RULES_LOOKUP_INDEX = RULES_SRD_DIR / "lookup" / "rules_lookup.json"
+RULES_GLOSSARY_INDEX = RULES_SRD_DIR / "lookup" / "rules_glossary.json"
 INSTALLED_RULES = RULES_DIR / "installed-rules.json"
 
 
@@ -70,6 +75,13 @@ def load_rules_lawyer_prompt() -> str:
     if not RULES_LAWYER_PROMPT.exists():
         return ""
     return RULES_LAWYER_PROMPT.read_text(encoding="utf-8")
+
+
+def load_campaign_generator_prompt() -> str:
+    """Load the campaign-generator prompt, or "" if the file is missing."""
+    if not CAMPAIGN_GENERATOR_PROMPT.exists():
+        return ""
+    return CAMPAIGN_GENERATOR_PROMPT.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

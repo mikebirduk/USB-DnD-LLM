@@ -18,6 +18,7 @@ Commands:
     /rules-context <action>   show the rules context that would be sent to the DM
     /askrule <question>   answer a rules question via the Rules Helper path
     /rules-status     show whether the local rules library is installed
+    /new-campaign <seed>   generate a local campaign pack from a seed
     /check            show the current pending check, if any
     /scene            show the player-facing view of the current scene
     /scene-debug      show the full current scene JSON (dev only)
@@ -41,6 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import action_detector
+import campaign_generator
 import character
 import dice
 import dm_engine
@@ -69,9 +71,9 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print(
         "  Type an action to play. Commands: /roll <formula>  /rollcheck  "
         "/character  /mod <ability> [skill]  /rule <query>  "
-        "/rules-context <action>  /askrule <question>  /rules-status  /check  "
-        "/scene  /scene-debug  /reset-scene  /detect <action>  "
-        "/narrate <action>  /debug-last  /recap  /quit"
+        "/rules-context <action>  /askrule <question>  /rules-status  "
+        "/new-campaign <seed>  /check  /scene  /scene-debug  /reset-scene  "
+        "/detect <action>  /narrate <action>  /debug-last  /recap  /quit"
     )
     print("=" * 60)
     print()
@@ -211,6 +213,31 @@ def _handle_rule(query: str) -> None:
         return
     results = rules_lookup.search_rules(query, limit=3)
     print(f"\n{rules_lookup.format_rule_results(results)}\n")
+
+
+def _handle_new_campaign(seed: str, ctx: Ctx) -> None:
+    """Generate a campaign pack from a seed and print where it was written.
+
+    Does not switch the active campaign/scene — this only generates the pack.
+    """
+    seed = seed.strip()
+    if not seed:
+        print("Usage: /new-campaign <seed text>\n")
+        return
+
+    print("\nGenerating campaign pack (this can take a while on local models)...")
+    result = campaign_generator.generate_campaign_pack(seed, model=ctx.model)
+
+    if not result.get("ok"):
+        print(f"Campaign generation failed: {result.get('error')}", file=sys.stderr)
+        if result.get("raw_path"):
+            print(f"Raw model response saved to: {result['raw_path']}", file=sys.stderr)
+        print()
+        return
+
+    print(f"\nCampaign: {result['title']}")
+    print(f"Folder:   {result['folder']}")
+    print("(Generated locally; not committed to Git. Not auto-loaded yet.)\n")
 
 
 def _handle_rules_context(text: str) -> None:
@@ -817,6 +844,10 @@ def main() -> int:
 
         if player_input == "/rules-status":
             _handle_rules_status()
+            continue
+
+        if player_input == "/new-campaign" or player_input.startswith("/new-campaign "):
+            _handle_new_campaign(player_input[len("/new-campaign"):], ctx)
             continue
 
         if player_input == "/check":

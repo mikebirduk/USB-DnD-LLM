@@ -262,6 +262,35 @@ instead.
 /rule short rest
 ```
 
+### Campaign generation
+
+Generate an **engine-ready** campaign pack (not just prose) from a short seed,
+using the installed local model. Either run the standalone script:
+
+```bash
+python3 Shared/ai_dm/app/generate_campaign.py "low magic coastal folk horror, strange lights at sea"
+```
+
+or, inside the runner:
+
+```text
+/new-campaign low magic coastal folk horror, strange lights at sea
+```
+
+Each pack is written to `Shared/ai_dm/campaigns/<slug>/` as `campaign.json`,
+`scenes/starting_scene.json`, `npcs.json`, `locations.json`, `factions.json`,
+`rumours.json`, `session_01_outline.md`, and a `README.md`. The starting scene
+follows the same structure as the built-in scenes (hidden truths, obvious
+interactions, and default checks with success/failure outcomes). If the model
+returns something invalid, the raw response is saved as
+`raw_generation_failed.txt` and a clear error is printed — the app does not
+crash.
+
+Generated campaigns are **local and private**, stored under
+`Shared/ai_dm/campaigns/`, and are **ignored by Git**. This is the first
+campaign-generation milestone: it produces the pack but does **not** auto-load
+it as the active campaign/scene yet.
+
 Commands inside the loop:
 
 - `/roll <formula>` — roll dice (e.g. `1d20+3`, `2d6`, `1d8-1`); resolves the
@@ -279,6 +308,8 @@ Commands inside the loop:
   dedicated Rules Helper path
 - `/rules-status` — show whether the local rules library is installed and
   indexed
+- `/new-campaign <seed>` — generate a local campaign pack from a seed (written
+  under `Shared/ai_dm/campaigns/`, not auto-loaded)
 - `/check` — show the current pending check, if any
 - `/detect <action>` — preview the scene check an action would trigger,
   without saving it
