@@ -19,6 +19,7 @@ CHARACTER_TEMPLATE = AI_DM_ROOT / "templates" / "characters" / "example_characte
 SCENES_TEMPLATE_DIR = AI_DM_ROOT / "templates" / "scenes"
 DEFAULT_SCENE_TEMPLATE = "old_well_scene"
 DM_SYSTEM_PROMPT = AI_DM_ROOT / "prompts" / "dm_system.md"
+RULES_LAWYER_PROMPT = AI_DM_ROOT / "prompts" / "rules_lawyer.md"
 
 SAVES_DIR = AI_DM_ROOT / "saves"
 SESSION_LOG = SAVES_DIR / "current_session.md"
@@ -62,6 +63,13 @@ def load_character() -> Dict[str, Any]:
 def load_dm_system_prompt() -> str:
     """Load the DM system prompt markdown."""
     return load_text(DM_SYSTEM_PROMPT)
+
+
+def load_rules_lawyer_prompt() -> str:
+    """Load the rules-helper prompt, or "" if the file is missing."""
+    if not RULES_LAWYER_PROMPT.exists():
+        return ""
+    return RULES_LAWYER_PROMPT.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

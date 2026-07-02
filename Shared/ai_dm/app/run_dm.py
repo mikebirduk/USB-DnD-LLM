@@ -15,6 +15,8 @@ Commands:
     /character        show the active character sheet
     /mod <ability> [skill]   show the character's modifier for an ability/skill
     /rule <query>     look up local rules by keyword
+    /rules-context <action>   show the rules context that would be sent to the DM
+    /askrule <question>   answer a rules question via the Rules Helper path
     /rules-status     show whether the local rules library is installed
     /check            show the current pending check, if any
     /scene            show the player-facing view of the current scene
@@ -66,8 +68,9 @@ def _print_welcome(campaign, character, model, scene) -> None:
     print("-" * 60)
     print(
         "  Type an action to play. Commands: /roll <formula>  /rollcheck  "
-        "/character  /mod <ability> [skill]  /rule <query>  /rules-status  "
-        "/check  /scene  /scene-debug  /reset-scene  /detect <action>  "
+        "/character  /mod <ability> [skill]  /rule <query>  "
+        "/rules-context <action>  /askrule <question>  /rules-status  /check  "
+        "/scene  /scene-debug  /reset-scene  /detect <action>  "
         "/narrate <action>  /debug-last  /recap  /quit"
     )
     print("=" * 60)
@@ -170,11 +173,15 @@ def _handle_detect(action: str) -> None:
 
 
 def _handle_player_action(player_input: str, ctx: Ctx) -> None:
-    """Detect a scene/keyword check, else send the action to the DM.
+    """Route a normal player input: rules question, scene check, or DM turn.
 
-    If a check is detected, the app creates the pending check itself and waits
-    for the player to roll rather than calling the LLM.
+    Rules/mechanics questions go to the dedicated Rules Helper path. Otherwise
+    a detected check creates a pending check; anything else is a DM turn.
     """
+    if rules_lookup.is_rules_question(player_input):
+        _rules_answer_turn(player_input, ctx)
+        return
+
     check = _detect_check(player_input)
     if not check:
         _dm_turn(player_input, ctx)
@@ -206,6 +213,32 @@ def _handle_rule(query: str) -> None:
     print(f"\n{rules_lookup.format_rule_results(results)}\n")
 
 
+def _handle_rules_context(text: str) -> None:
+    """Show the rules context that would be sent to the DM for an action/question.
+
+    Does not modify game state.
+    """
+    text = text.strip()
+    if not text:
+        print("Usage: /rules-context <action or question>\n")
+        return
+    if not rules_lookup.load_rules_lookup():
+        print(f"{rules_lookup.NOT_INSTALLED_MESSAGE}\n")
+        return
+
+    query = rules_lookup.build_rules_query(player_input=text)
+    results = rules_lookup.search_rules(query, limit=3) if query else []
+
+    print(f"\nRules context for:\n{text}\n")
+    if not results:
+        print("Matched snippets: (none)\n")
+        return
+    print("Matched snippets:")
+    for doc in results:
+        print(f"- {doc.get('title', doc.get('id', 'Unknown'))}")
+    print(f"\n{rules_lookup.format_rule_results(results)}\n")
+
+
 def _handle_rules_status() -> None:
     """Report whether rules are installed and how many docs are indexed."""
     installed = state_store.load_installed_rules()
@@ -228,11 +261,23 @@ def _handle_rules_status() -> None:
 
 
 def _handle_debug_last() -> None:
-    """Show debug data for the last DM response: raw vs normalised check."""
+    """Show debug data for the last DM/rules response."""
     data = state_store.load_last_dm_response()
     if not data:
         print("No debug data yet.\n")
         return
+
+    if data.get("mode") == "rules_question":
+        print("\nmode: rules_question")
+        print(f"rules_context_included: {str(bool(data.get('rules_context_included'))).lower()}")
+        print(f"model_response_used: {str(bool(data.get('model_response_used'))).lower()}")
+        print(f"fallback_used: {str(bool(data.get('fallback_used'))).lower()}")
+        print("\nlast parsed response:")
+        print(json.dumps(data.get("parsed_response"), indent=2, ensure_ascii=False))
+        print()
+        return
+
+    print("\nmode: narration")
     print("\nraw requested_check:")
     print(json.dumps(data.get("raw_requested_check"), indent=2, ensure_ascii=False))
     print("\nnormalised requested_check:")
@@ -287,6 +332,7 @@ def _resolve_pending(result: dict, pending: dict, ctx: Ctx) -> None:
         ctx,
         player_label="(rolled for the pending check)",
         allow_requested_check=False,
+        resolved_check=pending,
     )
 
 
@@ -444,11 +490,146 @@ def _handle_mod(args: str) -> None:
     print()
 
 
+def _load_rules_prompt() -> str:
+    """Load the rules-helper prompt, returning "" on any error."""
+    try:
+        return state_store.load_rules_lawyer_prompt()
+    except OSError:
+        return ""
+
+
+def _emit_rules_answer(
+    question: str,
+    answer: str,
+    prompt_to_player: str,
+    rules_context: str,
+    model_used: bool,
+    fallback_used: bool,
+    structured: dict | None,
+) -> None:
+    """Print, log, and record debug for a rules-helper answer."""
+    if fallback_used:
+        print(f"\nRules answer:\n{answer}\n")
+    else:
+        print(f"\nDM (rules) > {answer}\n")
+        if prompt_to_player:
+            print(f"{prompt_to_player}\n")
+
+    if structured is not None:
+        structured_json = json.dumps(structured, indent=2, ensure_ascii=False)
+    else:
+        structured_json = json.dumps(
+            {
+                "narration": answer,
+                "requested_check": None,
+                "dm_notes": [],
+                "state_updates": [],
+                "prompt_to_player": prompt_to_player,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    state_store.append_structured_turn(
+        player_action=question,
+        narration=answer,
+        check_summary="",
+        structured_json=structured_json,
+    )
+    state_store.save_last_dm_response(
+        {
+            "mode": "rules_question",
+            "question": question,
+            "rules_context_included": bool(rules_context.strip()),
+            "model_response_used": model_used,
+            "fallback_used": fallback_used,
+            "parsed_response": structured,
+        }
+    )
+
+
+def _rules_answer_turn(question: str, ctx: Ctx) -> None:
+    """Answer a rules/mechanics question via the dedicated Rules Helper path.
+
+    Uses a small rules-only prompt (not the atmospheric DM prompt). If the
+    model ignores the question and a local fallback exists, the fallback is
+    used instead. Does not create a pending check.
+    """
+    question = question.strip()
+    if not question:
+        print("Usage: /askrule <question>\n")
+        return
+
+    rules_context = rules_lookup.get_relevant_rules_context(player_input=question)
+    scene = state_store.load_current_scene()
+    messages = dm_engine.build_rules_answer_messages(
+        question, rules_context, current_scene=scene, rules_prompt=_load_rules_prompt()
+    )
+    fallback = rules_lookup.rules_fallback(question)
+
+    try:
+        raw = ollama_client.chat(messages, model=ctx.model, json_mode=True)
+    except ollama_client.OllamaError as exc:
+        if fallback:
+            print(
+                f"[Ollama unavailable — using local rules fallback: {exc}]",
+                file=sys.stderr,
+            )
+            _emit_rules_answer(
+                question, fallback["answer"], "", rules_context,
+                model_used=False, fallback_used=True, structured=None,
+            )
+        else:
+            print(f"\n[Ollama error] {exc}\n", file=sys.stderr)
+        return
+
+    try:
+        data = dm_engine.parse_dm_response(raw)
+    except ValueError:
+        data = None
+
+    narration = str(data.get("narration", "")).strip() if data else ""
+    prompt_to_player = str(data.get("prompt_to_player", "")).strip() if data else ""
+
+    model_failed = data is None or rules_lookup.response_missing_answer(question, narration)
+    if fallback and model_failed:
+        _emit_rules_answer(
+            question, fallback["answer"], "", rules_context,
+            model_used=False, fallback_used=True, structured=data,
+        )
+        return
+
+    if data is None:
+        # No usable answer and no fallback — show raw, do not crash.
+        print(
+            "\n[Could not read the rules answer as JSON — showing raw output.]\n",
+            file=sys.stderr,
+        )
+        print(raw.strip() + "\n")
+        state_store.append_failed_turn(question, raw)
+        state_store.save_last_dm_response(
+            {
+                "mode": "rules_question",
+                "question": question,
+                "rules_context_included": bool(rules_context.strip()),
+                "model_response_used": False,
+                "fallback_used": False,
+                "parsed_response": None,
+            }
+        )
+        return
+
+    _emit_rules_answer(
+        question, narration or "(no answer)", prompt_to_player, rules_context,
+        model_used=True, fallback_used=False, structured=data,
+    )
+
+
 def _dm_turn(
     player_input: str,
     ctx: Ctx,
     player_label: str | None = None,
     allow_requested_check: bool = True,
+    resolved_check: dict | None = None,
 ) -> None:
     """Send one player message to the DM and handle the structured response.
 
@@ -456,9 +637,25 @@ def _dm_turn(
     block (used for internal follow-ups like roll resolution).
     ``allow_requested_check`` controls whether a model-requested check may be
     saved as pending (disabled for roll-resolution follow-ups).
+    ``resolved_check`` supplies the just-resolved check so rules context is
+    drawn from it rather than from the (internal) resolution prompt text.
     """
     recent_log = state_store.read_session_log()
     scene = state_store.load_current_scene()
+
+    # Retrieve relevant local rules snippets for the DM prompt.
+    if resolved_check is not None:
+        rules_context = rules_lookup.get_relevant_rules_context(
+            resolved_check=resolved_check
+        )
+        rules_question = False
+    else:
+        pending = state_store.load_pending_check()
+        rules_context = rules_lookup.get_relevant_rules_context(
+            player_input=player_input, pending_check=pending
+        )
+        rules_question = rules_lookup.is_rules_question(player_input)
+
     messages = dm_engine.build_messages(
         system_prompt=ctx.system_prompt,
         campaign=ctx.campaign,
@@ -466,6 +663,8 @@ def _dm_turn(
         player_input=player_input,
         recent_log=recent_log,
         scene=scene,
+        rules_context=rules_context,
+        rules_question=rules_question,
     )
 
     try:
@@ -608,6 +807,10 @@ def main() -> int:
             _handle_mod(player_input[len("/mod"):])
             continue
 
+        if player_input == "/rules-context" or player_input.startswith("/rules-context "):
+            _handle_rules_context(player_input[len("/rules-context"):])
+            continue
+
         if player_input == "/rule" or player_input.startswith("/rule "):
             _handle_rule(player_input[len("/rule"):])
             continue
@@ -636,10 +839,17 @@ def main() -> int:
             _handle_detect(player_input[len("/detect"):])
             continue
 
+        if player_input == "/askrule" or player_input.startswith("/askrule "):
+            _rules_answer_turn(player_input[len("/askrule"):], ctx)
+            continue
+
         if player_input == "/narrate" or player_input.startswith("/narrate "):
             action = player_input[len("/narrate"):].strip()
             if not action:
                 print("Usage: /narrate <action>\n")
+            elif rules_lookup.is_rules_question(action):
+                # Bypass scene detection but still answer rules questions.
+                _rules_answer_turn(action, ctx)
             else:
                 # Bypass deterministic detection; narrate directly.
                 _dm_turn(action, ctx)

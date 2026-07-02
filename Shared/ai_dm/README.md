@@ -199,6 +199,30 @@ rules content (Markdown summaries, the lookup index, and `installed-rules.json`)
 stays local under `Shared/ai_dm/rules/` and is git-ignored; only the manifests,
 attribution, example house rules, and scripts are tracked.
 
+The AI-DM can now retrieve local rules snippets and include them in the DM
+prompt. This uses simple local keyword lookup, not cloud search or vector
+search. Relevant snippets are pulled automatically from the player's action, a
+pending check, or a resolved roll.
+
+Rules questions use a dedicated Rules Helper path rather than the normal DM
+narration prompt. When the input reads like a rules/mechanics question (e.g.
+"Can I grapple the creature in the well?", "How does short rest work?", "What
+happens at zero hit points?"), a small rules-only prompt answers the question
+directly and concisely from the local rules, then relates it to the scene —
+instead of the atmospheric DM prompt. This applies to typed input, to
+`/narrate` (which skips scene-check detection but still answers rules
+questions), and to `/askrule` (which always uses the Rules Helper path). If the
+model still ignores the question, a deterministic local fallback answer is used
+instead.
+
+```text
+/askrule Can I grapple the creature in the well?
+/narrate Can I grapple the creature in the well?
+/rules-context Can I grapple the creature in the well?
+/rule grappled
+/rule short rest
+```
+
 Commands inside the loop:
 
 - `/roll <formula>` — roll dice (e.g. `1d20+3`, `2d6`, `1d8-1`); resolves the
@@ -210,6 +234,10 @@ Commands inside the loop:
 - `/mod <ability> [skill]` — show the character's modifier for an ability, or
   an ability + skill (e.g. `/mod Wisdom Perception`)
 - `/rule <query>` — look up local rules by keyword (e.g. `/rule perception`)
+- `/rules-context <action>` — preview the local rules snippets that would be
+  injected into the DM prompt for an action or question
+- `/askrule <question>` — always answer a rules/mechanics question via the
+  dedicated Rules Helper path
 - `/rules-status` — show whether the local rules library is installed and
   indexed
 - `/check` — show the current pending check, if any

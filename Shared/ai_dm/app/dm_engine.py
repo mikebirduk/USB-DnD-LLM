@@ -334,6 +334,116 @@ def build_scene_dm_section(scene: Dict[str, Any]) -> str:
     )
 
 
+def build_rules_section(rules_context: str) -> str:
+    """Build the local-rules context section for the DM prompt."""
+    return (
+        "LOCAL RULES CONTEXT:\n"
+        f"{rules_context.strip()}\n\n"
+        "Use these local rule snippets when relevant.\n"
+        "Do not quote them at length unless the player asks for rules.\n"
+        "If no rule context is provided, continue normally."
+    )
+
+
+# Standalone mode section, added when the player asks a rules question.
+RULES_QUESTION_MODE = """\
+RULES QUESTION MODE
+
+The player is asking a rules/mechanics question.
+
+Answer the rules question directly using LOCAL RULES CONTEXT.
+Be concise.
+Do not only narrate atmosphere.
+After answering the rules question, relate it to the current scene if relevant.
+If the action is possible, ask whether the player wants to attempt it.
+If a roll is likely needed, mention the likely ability/skill, but do not create a pending check unless the app has done so."""
+
+# Final recency reminder, appended last when in rules-question mode.
+RULES_QUESTION_REMINDER = """\
+The player's latest input is a rules/mechanics question.
+Your narration field must answer the question directly.
+Do not respond with only scene description."""
+
+
+# Default Rules Helper system prompt, used if prompts/rules_lawyer.md is missing.
+DEFAULT_RULES_HELPER_PROMPT = """\
+You are the local rules helper for a private AI Dungeon Master.
+
+The player is asking a rules/mechanics question.
+
+Answer the question directly using LOCAL RULES CONTEXT.
+Do not respond with only atmosphere.
+Do not describe the scene unless it helps apply the rule.
+Be concise.
+If the local rules context is incomplete, say so and give a practical ruling.
+If the action seems possible, say what roll or check would likely be needed.
+End by asking whether the player wants to attempt the action."""
+
+# JSON contract for the Rules Helper (kept minimal, separate from dm_system.md).
+_RULES_ANSWER_JSON = """\
+Respond with a single valid JSON object only. Do not wrap it in markdown and do
+not add commentary outside the JSON. Use exactly this shape:
+{
+  "narration": "Direct rules answer plus scene relevance.",
+  "requested_check": null,
+  "dm_notes": [],
+  "state_updates": [],
+  "prompt_to_player": "Do you attempt it?"
+}"""
+
+
+def build_rules_answer_messages(
+    question: str,
+    rules_context: str,
+    current_scene: Optional[Dict[str, Any]] = None,
+    rules_prompt: str = "",
+) -> List[Dict[str, str]]:
+    """Build a small, dedicated Rules Helper prompt for a rules question.
+
+    Much smaller than the normal DM prompt: it includes the question, the
+    local rules context, and (only if useful) minimal scene context — no
+    hidden truths, no atmospheric scene block, no DM secrets, no default
+    checks. Ends with a hard instruction to answer the question directly.
+    """
+    sections = [(rules_prompt.strip() or DEFAULT_RULES_HELPER_PROMPT)]
+
+    if rules_context.strip():
+        sections.append(f"LOCAL RULES CONTEXT:\n{rules_context.strip()}")
+    else:
+        sections.append(
+            "LOCAL RULES CONTEXT:\n(No specific local rule matched. Give a "
+            "practical ruling based on standard play and say the local rules "
+            "are incomplete.)"
+        )
+
+    # Minimal scene context only — no hidden truths or default checks.
+    if current_scene:
+        location = str(current_scene.get("location", "")).strip()
+        situation = str(current_scene.get("current_situation", "")).strip()
+        scene_bits = []
+        if location:
+            scene_bits.append(f"Location: {location}")
+        if situation:
+            scene_bits.append(f"Current situation: {situation}")
+        if scene_bits:
+            sections.append("CURRENT SCENE (brief):\n" + "\n".join(scene_bits))
+
+    sections.append(_RULES_ANSWER_JSON)
+
+    # Hard final instruction with recency, including the literal question.
+    sections.append(
+        "The player's latest input is a rules/mechanics question.\n\n"
+        "Your narration field MUST answer this question directly.\n\n"
+        "Do NOT write atmospheric scene narration as the main answer.\n\n"
+        f"Question:\n{question.strip()}"
+    )
+
+    return [
+        {"role": "system", "content": "\n\n".join(sections)},
+        {"role": "user", "content": question.strip()},
+    ]
+
+
 def build_messages(
     system_prompt: str,
     campaign: Dict[str, Any],
@@ -341,12 +451,15 @@ def build_messages(
     player_input: str,
     recent_log: str = "",
     scene: Optional[Dict[str, Any]] = None,
+    rules_context: str = "",
+    rules_question: bool = False,
 ) -> List[Dict[str, str]]:
     """Assemble the full messages list for one DM turn.
 
     The system message combines the base DM system prompt, the turn
-    instructions, the visible context block, the current scene (if any), and
-    clearly labelled DM-only sections for campaign secrets and scene truths.
+    instructions, the visible context block, the current scene (if any),
+    clearly labelled DM-only sections for campaign secrets and scene truths,
+    and (when available) a local rules context section.
     """
     sections = [
         system_prompt.strip(),
@@ -358,6 +471,12 @@ def build_messages(
     sections.append(build_hidden_dm_section(campaign))
     if scene:
         sections.append(build_scene_dm_section(scene))
+    if rules_context.strip():
+        sections.append(build_rules_section(rules_context))
+    if rules_question:
+        sections.append(RULES_QUESTION_MODE)
+        # Appended last so the instruction has recency in the prompt.
+        sections.append(RULES_QUESTION_REMINDER)
 
     return [
         {"role": "system", "content": "\n\n".join(sections)},
