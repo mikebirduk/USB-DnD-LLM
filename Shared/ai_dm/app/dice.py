@@ -63,6 +63,10 @@ def roll(formula: str) -> Dict[str, Union[str, int, List[int]]]:
     }
 
 
+# Public alias — the AI-DM runner refers to the roller as ``roll_dice``.
+roll_dice = roll
+
+
 if __name__ == "__main__":
     import sys
 
